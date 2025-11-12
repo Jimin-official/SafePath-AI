@@ -1,0 +1,1462 @@
+{% extends "base.html" %}
+
+{% block title %}사용자 지정 경로 탐색{% endblock %}
+
+{% block head_extra %}
+  {{ super() }}
+  {% include "coach_map_user.html" %}
+  <style>
+    /* 모든 글자 폰트 통일 */
+    .sidebar,
+    .sidebar * {
+      font-family: "Google Sans", Roboto, "Noto Sans KR", Arial,        sans-serif !important;
+      font-size: 0.875rem !important;
+      line-height:1.25rem !important;
+      letter-spacing: 0.00625rem !important;
+      color: #333;
+    }
+
+    .map-style-switcher,
+    .map-style-switcher,
+    .style-btn * {
+      font-family: "Google Sans", Roboto, "Noto Sans KR", Arial,        sans-serif !important;
+      font-size: 0.875rem !important;
+      line-height:1.25rem !important;
+      letter-spacing: 0.00625rem !important;
+      color: #333;
+    }
+
+    /* 맵 스타일 */
+    #map {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 0;   /* 헤더보다 낮게 */
+    }
+
+    #info, #coordsInfo, #utmInfo, #warningBox {
+      position: absolute;
+      left: 20px;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      z-index: 1001;
+      font-size: 14px;
+    }
+
+    #info { 
+      top: 80px; 
+      font-weight: bold; 
+    }
+
+    #warningBox {
+      top: 230px;
+      color: #cc0000;
+      background-color: #ffe5e5;
+      border: 1px solid #cc0000;
+      font-weight: bold;
+      display: none;
+    }
+
+    /* 사이드 바 스타일*/
+    .sidebar{
+      position: fixed;
+      left: 0;
+      width: 400px;          /* 필요 시 360px 등으로 변경 */
+      top: 110px; bottom: 0;     /* JS가 헤더 높이에 맞춰 덮어씀 */
+      background: #fff;
+      border-radius: 0;
+      overflow: visible;
+      z-index: 3000;
+      transform: translateX(0);
+      transition: transform .28s ease;
+    }
+
+    /* 닫힘: 토글이 14px 보이도록 이동(핸들 너비 28px 기준) */
+    .sidebar.closed{
+      transform: translateX(calc(-100% + 14px));
+    }
+
+    /* 내부 스크롤 영역(콘텐츠는 여기서만 스크롤) */
+    .sidebar .sidebar-body{
+      height: 100%;
+      padding: 1.2rem 1.5rem;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    /* 캡슐형 토글 — 문자 아이콘(◀/▶) 사용 */
+    .sidebar .sidebar-handle{
+      position: absolute;
+      top: 50%;
+      right: -28px;               /* 핸들 너비 28px → 절반만 밖으로 */
+      transform: translateY(-50%);
+      width: 28px; height: 84px;  /* 세로 캡슐 */
+      display: grid; place-items: center;
+      border-radius: 0;
+      border: 1px solid rgba(0,0,0,.12);
+      background: #fff;
+      color: #333;
+      font-weight: 700; line-height: 1;
+      border-radius: 0 8px 8px 0;
+      cursor: pointer;
+      user-select: none;
+      border-left: none;
+      z-index: 5000;              
+    }
+
+    .sidebar .sidebar-handle:hover{
+      filter: brightness(0.98);
+    }
+
+    /* (선택) 화면 높이가 낮을 때 핸들 살짝 축소 */
+    @media (max-height: 680px){
+      .sidebar .sidebar-handle{ height: 68px; }
+    }
+
+    /* ── 출발지, 도착지, 스왑버튼 ── */
+    .naver-input-box {
+      position: relative;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      overflow: hidden;
+      width: 100%;
+      max-width: 480px;
+      background: white;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+
+    .naver-input-box input {
+      width: 100%;
+      border: none;
+      padding: 12px 40px 12px 12px; /* 오른쪽 여백 확보 (스왑 버튼 공간) */
+      font-size: 14px;
+      background: transparent;
+      outline: none;
+      display: block;
+    }
+
+    .naver-input-box input:first-child {
+      border-bottom: 1px solid #eee;
+    }
+
+    .naver-input-box .swap-btn {
+      position: absolute;
+      top: 50%;
+      right: 8px;
+      transform: translateY(-50%);
+      width: 28px;
+      height: 28px;
+      border: 1px solid #ccc;
+      border-radius: 50%;
+      background: white;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      z-index: 10;
+    }
+
+    /* MGRS 박스 */
+    .mgrs-box{
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background:#fff;
+      padding:10px 12px;
+      display:grid;
+      gap:6px;
+    }
+    .mgrs-row{
+      display:flex;
+      justify-content: flex-start;
+      align-items:center;
+      font-size:13px;
+      gap: 6px;
+    }
+    .mgrs-row b{
+      color:#374151;
+    }
+    .mgrs-row span{
+      font-weight:400;
+      color:#111827;
+    }
+
+    /* 지도 스타일  */
+    .map-style-switcher {
+      position: absolute;
+      top: 0px;
+      right: 0px;
+      z-index: 3000;
+      pointer-events: auto;
+      background: transparent;
+      border-radius: 12px;
+      padding: 4px;
+      display: flex;
+      flex-direction: column; /* 세로 */
+      gap: 6px; /* 스타일 버튼과 장애물 버튼 사이 간격 */
+    }
+
+    .style-btn-group {
+      display: flex;
+      gap: 6px; /* 스타일 버튼 간 간격 */
+    } 
+
+    .style-btn {
+      cursor: pointer;
+      text-align: center;
+      padding: 6px;
+      border-radius: 8px;
+      background-color: white;
+      border: 1px solid #ccc;
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 70px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+      color: black;
+    }
+
+    .style-btn img {
+      width: 50px;
+      height: 50px;
+      object-fit: cover;
+      border-radius: 4px;
+    }
+
+    .style-btn.active {
+      border: 2px solid #1a73e8;  /* 파란 테두리 */
+      color: #1a73e8;             /* 텍스트도 파란색으로 */
+    }
+
+    /* 철조망, 낙석 지대 */
+    .map-style-container {
+      position: absolute;
+      top: 110px;
+      right: 20px;
+      z-index: 3000;
+      user-select: none;
+      display: flex;
+      flex-direction: column;  /* 세로 정렬 */
+      gap: 8px;                /* 버튼들 간격 */
+    }
+
+    #specialObstacleButtons {
+      padding: 6px 10px;
+      border-radius: 6px;
+      display: flex;
+      gap: 10px; /* 버튼 간 간격 */
+      user-select: none;    
+      justify-content: flex-end;
+    }
+
+    #specialObstacleButtons button {
+      padding: 6px 12px;
+      font-size: 14px;
+      border: 2px solid transparent;
+      border-radius: 20px;
+      cursor: pointer;
+      background-color: #fff;
+      transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+      user-select: none;
+    }
+
+    /* 철조망 버튼 파란색 기본 상태 */
+    #btnBarbedWire {
+      border-color: #3b82f6;  /* 연한 파란색 테두리 */
+      color: #3b82f6;
+    }
+
+    /* 낙석 버튼 빨간색 기본 상태 */
+    #btnRockfall {
+      border-color: #ef4444;  /* 연한 빨간색 테두리 */
+      color: #ef4444;
+    }
+
+    /* 호버 시 배경 살짝 색 넣기 */
+    #btnBarbedWire:hover {
+      background-color: #dbeafe; /* 연한 파랑 배경 */
+    }
+
+    #btnRockfall:hover {
+      background-color: #fee2e2; /* 연한 빨강 배경 */
+    }
+
+    /* 선택(active) 상태 - 좀 더 진한 색상, 테두리, 글자색 */
+    #btnBarbedWire.active {
+      background-color: #3b82f6;
+      color: white;
+      border-color: #2563eb;  /* 더 진한 파랑 */
+      font-weight: bold;
+    }
+
+    #btnRockfall.active {
+      background-color: #ef4444;
+      color: white;
+      border-color: #b91c1c;  /* 더 진한 빨강 */
+      font-weight: bold;
+    }
+
+    /* 다시입력, 길찾기 스타일 */
+    .button-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    .btn-primary {
+      background-color: #007bff;
+      color: white;
+      border: 1px solid #007bff;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      flex-grow: 1; /* 버튼들이 공간을 채우도록 */
+    }
+
+    .btn-secondary {
+      background-color: white;
+      color: #007bff;
+      border: 1px solid #ccc;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      flex-grow: 1;
+    }
+
+    .btn-primary:hover {
+      background-color: #0056b3;
+    }
+
+    .btn-secondary:hover {
+      background-color: #f0f0f0;
+    }
+
+    /* 알고리즘 글자*/
+    .section-title {
+      font-weight: bold;
+      font-size: 16px;
+      margin-top: 25px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 4px;
+    }
+
+    /* 알고리즘 탭 */
+    .algo-tabs { margin-top: 0px; border-radius:10px; padding:0px; }
+    .algo-tabs .tabs-header { width:100%; margin-bottom: 12px; }
+    .algo-tabs .tabs-body{ margin-top: 8px; }
+    
+    /* 캡슐형 탭 바 */
+    .seg-tabs{
+      display: flex;
+      width: 100%;
+      border:1px solid #e5e7eb;
+      border-radius:10px;
+      background:#fff;
+      overflow:hidden;            /* 오른쪽 버튼 튀어나옴 방지 */
+      box-shadow:0 1px 2px rgba(255, 255, 255, 0.04);
+    }
+
+    /* 버튼: 균등폭 배치 */
+    .seg-btn{
+      appearance:none;
+      border:0;
+      padding:8px 8px;
+      flex: 1 1 0;               /* 동일 비율로 늘림 */
+      min-width: 0;              /* 줄바꿈/튀어나옴 방지 */
+      background:#fff;
+      color:#333;
+      cursor:pointer;
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      gap:2px;
+      transition:background .15s ease, color .15s ease;
+      border-right:1px solid #f0f0f0;
+      box-sizing: border-box;
+    }
+    .seg-btn:last-child{ border-right:none; }
+    .seg-btn:hover{ background:#f8fafc; }
+
+    .seg-btn .label{ font-size:13px; font-weight:400; letter-spacing:-.2px; }
+    .seg-btn .time{ font-size:11px; line-height:1.2; color:#77838f; }
+    .seg-btn .time { display: none !important; }
+    .seg-btn.active .label{ font-weight:700; }
+    .seg-btn.active .time{ color:#eaf3ff; }
+
+    /* 메트릭 카드 그리드 간격 유지 */
+    .metrics{ display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; }
+    .metrics > div{ background:#fafafa; border:1px solid #eee; border-radius:8px; padding:10px; display:flex; flex-direction:column; gap:4px; }
+    .metrics b{ font-size:12px; color:#666; }
+    .metrics span{ font-size:14px; } 
+
+    /* 메트릭: 2열 균등, 작은 화면에서 1열로 */
+    .metrics{
+      display:grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap:10px;
+    }
+    @media (max-width: 420px){
+      .metrics{ grid-template-columns: 1fr; }
+    }
+
+    /* 카드: 미니멀, 가벼운 테두리+그림자 */
+    .metric-card{
+      display:flex;
+      flex-direction:column;
+      align-items:flex-start;    /* 왼쪽 정렬 */
+      justify-content:center;
+      padding:14px 12px;
+      background:#fff;
+      border:1px solid #e5e7eb;
+      border-radius:10px;
+      box-shadow: 0 4px 12px rgba(0,0,0,.04);
+      gap:4px;
+    }
+
+    /* 메인 숫자: 강하게, 라벨은 잔잔하게 */
+    .metric-main{
+      font-size:20px;
+      font-weight:700;
+      letter-spacing:-0.3px;
+      color:#111827;
+      line-height:1.1;
+    }
+    .metric-sub{
+      font-size:12px;
+      color:#6b7280;
+      line-height:1.2;
+    }
+
+    /* 장애물 스타일 */
+    .obstacle-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .obstacle-pair {
+      display: flex;
+      align-items: center;
+      padding: 0;                 
+      border: 1px solid #ddd;    
+      border-radius: 10px;      
+      background: #fff;           
+      height: 36px;              
+      overflow: hidden;          
+      box-sizing: border-box;
+    }
+
+    .obstacle-label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100px;  /* 이모지+텍스트 영역 너비 */
+      height: 100%;
+      font-size: 14px;
+      font-weight: 500;
+      background: #f0f0f0;
+      border-right: 1px solid #ddd;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+
+    .obstacle-label.selected {
+      background-color: #007bff;
+      color: #fff;
+      border-right-color: #007bff; 
+    }
+
+    .obstacle-inline-input {
+      width: 70px;
+      height: 100%;
+      border: none;
+      text-align: center;
+      font-size: 14px;
+      outline: none;
+      background: transparent;
+    }
+
+    /* 수동 위경도 입력 행(3열): 위도 | 경도 | 추가버튼 */
+    .obstacle-row.manual{
+      grid-template-columns: 1fr 1fr auto;
+      align-items: center;
+    }
+
+    /* 수동 입력 행에서는 테두리박스(.obstacle-pair) 외곽선을 없애서 이중 테두리 방지 */
+    .obstacle-row.manual .obstacle-pair{
+      border: none;
+      background: transparent;
+      height: auto;
+      padding: 0;
+    }
+
+    /* 수동 입력칸은 가로 100% + 보기 좋은 높이/테두리 */
+    .obstacle-row.manual .obstacle-inline-input{
+      width: 100%;
+      height: 36px;
+      box-sizing: border-box;
+      padding: 6px 10px;
+      border: 1px solid #ccc;
+      border-radius: 10px;
+      text-align: left; /* 숫자도 왼쪽 정렬 */
+      background: #fff;
+    }
+
+    /* '추가' 버튼을 오른쪽으로 붙이기(같은 행, 오른쪽 끝) */
+    #addManualObstacleBtn{
+      justify-self: end;
+      height: 36px;
+      padding: 0 14px;
+    }
+
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+    }
+    /* --- 모달(팝업창) 스타일 --- */
+    .modal {
+      display: none; /* 평소에는 숨김 */
+      position: fixed;
+      z-index: 5000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background-color: rgba(0,0,0,0.6); /* 뒷 배경 어둡게 */
+    }
+
+    .modal-content {
+      background-color: #fefefe;
+      margin: 10% auto; /* 화면 중앙에 위치 */
+      padding: 25px;
+      border: 1px solid #888;
+      width: 90%;
+      max-width: 500px; /* 최대 너비 지정 */
+      border-radius: 12px;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+      position: relative;
+    }
+
+    .close-button {
+      color: #aaa;
+      position: absolute;
+      top: 10px;
+      right: 20px;
+      font-size: 28px;
+      font-weight: bold;
+    }
+
+    .close-button:hover,
+    .close-button:focus {
+      color: black;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    /* --- 즐겨찾기 목록 스타일 --- */
+    .favorites-list {
+      margin-top: 20px;
+      max-height: 40vh; /* 목록이 길어지면 스크롤 생성 */
+      overflow-y: auto;
+    }
+
+    .favorite-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .favorite-item:last-child {
+      border-bottom: none;
+    }
+
+    .favorite-item-name {
+      font-weight: 600;
+      cursor: pointer;
+      flex-grow: 1;
+    }
+    .favorite-item-name:hover {
+      color: #007bff;
+    }
+
+    .favorite-item-delete-btn {
+      background: none;
+      border: none;
+      color: #dc3545;
+      font-size: 16px;
+      cursor: pointer;
+      margin-left: 15px;
+    }
+  </style>
+
+{% endblock %}
+
+{% block content %}
+<div id="map">
+  <!-- 지도 영역 -->
+  <div class="map-style-container">
+    <div class="map-style-switcher">
+      <div class="style-btn-group">
+        <div class="style-btn" data-style="osm">
+          <img src="{{ url_for('static', filename='img/일반.png') }}">
+          <div>일반지도</div>
+        </div>
+        <div class="style-btn" data-style="satellite">
+          <img src="{{ url_for('static', filename='img/위성.png') }}">
+          <div>위성지도</div>
+        </div>
+        <div class="style-btn" data-style="topo">
+          <img src="{{ url_for('static', filename='img/지형.png') }}">
+          <div>지형지도</div>
+        </div>
+      </div>
+
+      <div id="specialObstacleButtons">
+        <button id="btnBarbedWire">🚧철조망</button>
+        <button id="btnRockfall">⛰️낙석</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<aside id="sidebar" class="sidebar">
+  <button id="toggleSidebar" class="sidebar-handle" aria-label="사이드바 토글">◀</button>
+  <div class="sidebar-body">
+
+    <div class="naver-input-box">
+      <input type="text" id="start" placeholder="출발지 입력" autocomplete="off" />
+      <input type="text" id="end" placeholder="도착지 입력" autocomplete="off" />
+      <button type="button" class="swap-btn" aria-label="출발⇄도착">⇅</button>
+    </div>
+
+    <div class="obstacle-section">
+      <div class="section-title">방해요소</div>
+        <div class="obstacle-row">
+            <div class="obstacle-pair">
+                <span class="obstacle-label" data-value="enemies">💂북한군</span>
+                <input type="number" class="obstacle-inline-input" min="0" placeholder="숫자입력">
+            </div>
+            <div class="obstacle-pair">
+                <span class="obstacle-label" data-value="tanks">🚛북한전차</span>
+                <input type="number" class="obstacle-inline-input" min="0" placeholder="숫자입력">
+            </div>
+        </div>
+        <div class="obstacle-row">
+            <div class="obstacle-pair">
+                <span class="obstacle-label" data-value="fire">🔥화재</span>
+                <input type="number" class="obstacle-inline-input" min="0" placeholder="숫자입력">
+            </div>
+            <div class="obstacle-pair">
+                <span class="obstacle-label" data-value="explosion">💥폭발</span>
+                <input type="number" class="obstacle-inline-input" min="0" placeholder="숫자입력">
+            </div>
+        </div>
+        <div class="obstacle-row">
+            <div class="obstacle-pair">
+                <span class="obstacle-label" data-value="road_collapse">🕳️도로붕괴</span>
+                <input type="number" class="obstacle-inline-input" value="1" readonly placeholder="숫자입력">
+            </div>
+            <div class="obstacle-pair">
+                <span class="obstacle-label" data-value="bridge_collapse">🌉다리붕괴</span>
+                <input type="number" class="obstacle-inline-input" value="1" readonly placeholder="숫자입력">
+            </div>
+        </div>
+        <div class="obstacle-row manual">
+            <div class="obstacle-pair">
+                <input type="number" id="manualLatInput" placeholder="위도 입력" step="any" class="obstacle-inline-input" />
+            </div>
+            <div class="obstacle-pair">
+                <input type="number" id="manualLngInput" placeholder="경도 입력" step="any" class="obstacle-inline-input" />
+            </div>
+            <button id="addManualObstacleBtn" class="btn-primary">추가</button>
+        </div>
+    </div>
+
+    <div class="button-row">
+      <button id="resetBtn" class="btn-secondary">🔄 다시입력</button>
+      <button id="showFavoritesBtn" class="btn-secondary">⭐ 즐겨찾기</button>
+      <button id="routeBtn" class="btn-primary">길찾기 &gt;</button>
+    </div>
+
+    <div id="mgrsBox" class="mgrs-box" style="display:none; margin-top:10px;">
+      <div class="mgrs-row"><b>출발지 MGRS 좌표 : </b><span id="mgrs-start">-</span></div>
+      <div class="mgrs-row"><b>도착지 MGRS 좌표 : </b><span id="mgrs-end">-</span></div>
+    </div>
+
+    <div id="algoTabs" class="algo-tabs" style="display:none;">
+      <div class="section-title">알고리즘별 경로 요약</div>
+        <div class="tabs-header seg-tabs">
+            <button class="seg-btn" data-algo="all">전체</button>
+            <button class="seg-btn" data-algo="dlite">D* Lite</button>
+            <button class="seg-btn" data-algo="cch_a">CCH + A*</button>
+            <button class="seg-btn" data-algo="rtaa">RTAA*</button>
+        </div>
+        <div class="tabs-body">
+          <div class="metrics">
+            <div class="metric-card">
+              <div class="metric-main" id="metric-distance">-</div>
+              <div class="metric-sub">이동 거리</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-main" id="metric-time">-</div>
+              <div class="metric-sub">예상 시간</div>
+            </div>
+          </div>
+        </div>
+    </div>
+    
+    <button id="addFavoriteBtn" class="btn-primary" style="display: none; margin-top: 15px; width: 100%;">
+        💾 현재 경로 즐겨찾기 추가
+    </button>
+
+  </div><!-- /sidebar-body -->
+</aside>
+
+<div id="favoritesModal" class="modal">
+  <div class="modal-content">
+    <span class="close-button">&times;</span>
+    <h2>⭐ 즐겨찾기 목록</h2>
+    <div id="favoritesList" class="favorites-list"></div>
+  </div>
+</div>
+
+
+<!-- Leaflet 관련 라이브러리 -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.geometryutil/0.9.3/leaflet.geometryutil.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mgrs/dist/mgrs.min.js"></script>
+
+<style>
+.emoji-icon { font-size: 24px; line-height: 24px; }
+.avoid-marker { transition: opacity 0.4s ease; }
+</style>
+
+<script>
+  // 모든 DOM 관련 코드를 이 이벤트 리스너 안에 배치합니다.
+  document.addEventListener('DOMContentLoaded', () => {
+
+    // --- 전역 변수 및 UI 요소 정의 ---
+    let lastSearchedRoute = null;
+    let selectedObstacle = null;
+    const modal = document.getElementById('favoritesModal');
+    const showFavoritesBtn = document.getElementById('showFavoritesBtn');
+    const closeBtn = document.querySelector('.close-button');
+    const addFavoriteBtn = document.getElementById('addFavoriteBtn');
+    const favoritesListDiv = document.getElementById('favoritesList');
+    const routeBtn = document.getElementById('routeBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const sidebar = document.getElementById("sidebar");
+    
+    // --- 즐겨찾기 모달 관련 함수 및 이벤트 ---
+    function openFavoritesModal() {
+        loadAndDisplayFavorites();
+        modal.style.display = "block";
+    }
+
+    function closeFavoritesModal() {
+        modal.style.display = "none";
+    }
+
+    showFavoritesBtn.addEventListener('click', openFavoritesModal);
+    closeBtn.addEventListener('click', closeFavoritesModal);
+    window.addEventListener('click', (event) => {
+        if (event.target == modal) {
+            closeFavoritesModal();
+        }
+    });
+
+    addFavoriteBtn.addEventListener('click', async () => {
+        if (!lastSearchedRoute) {
+            alert("먼저 경로를 검색해주세요.");
+            return;
+        }
+        const name = prompt("이 경로의 즐겨찾기 이름을 입력하세요:", "예: 부대 -> 집");
+        if (!name) return;
+
+        const payload = { ...lastSearchedRoute, name: name };
+
+        try {
+            const response = await fetch('/add_favorite', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+            alert(data.message);
+            if (data.success) {
+                addFavoriteBtn.style.display = 'none';
+            }
+        } catch (error) {
+            console.error("즐겨찾기 추가 실패:", error);
+            alert("즐겨찾기 추가 중 오류가 발생했습니다.");
+        }
+    });
+
+    async function loadAndDisplayFavorites() {
+        try {
+            const response = await fetch('/get_favorites');
+            const data = await response.json();
+            favoritesListDiv.innerHTML = '';
+
+            if (!data.success) {
+                favoritesListDiv.innerHTML = `<p>${data.message}</p>`;
+                return;
+            }
+            if (data.favorites.length === 0) {
+                favoritesListDiv.innerHTML = '<p>저장된 즐겨찾기가 없습니다.</p>';
+                return;
+            }
+
+            data.favorites.forEach(fav => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'favorite-item';
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'favorite-item-name';
+                nameSpan.textContent = fav.name;
+                nameSpan.onclick = () => {
+                    document.getElementById('start').value = fav.start_address;
+                    document.getElementById('end').value = fav.goal_address;
+                    closeFavoritesModal();
+                };
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'favorite-item-delete-btn';
+                deleteBtn.innerHTML = '🗑️';
+                deleteBtn.onclick = async () => {
+                    if (confirm(`'${fav.name}' 즐겨찾기를 삭제하시겠습니까?`)) {
+                        try {
+                            const delResponse = await fetch('/delete_favorite', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ favorite_id: fav.favorite_id })
+                            });
+                            const delData = await delResponse.json();
+                            alert(delData.message);
+                            if (delData.success) {
+                                loadAndDisplayFavorites();
+                            }
+                        } catch (error) {
+                            console.error("즐겨찾기 삭제 실패:", error);
+                            alert("즐겨찾기 삭제 중 오류가 발생했습니다.");
+                        }
+                    }
+                };
+                itemDiv.appendChild(nameSpan);
+                itemDiv.appendChild(deleteBtn);
+                favoritesListDiv.appendChild(itemDiv);
+            });
+        } catch (error) {
+            console.error("즐겨찾기 로딩 실패:", error);
+            favoritesListDiv.innerHTML = '<p>목록을 불러오는 데 실패했습니다.</p>';
+        }
+    }
+
+    // --- 지도 및 경로탐색 관련 코드 ---
+    const obstacleIcons = {
+      enemies : '💂',
+      tanks : '🚛',
+      road_collapse : '🕳️',
+      bridge_collapse : '🌉',
+      fire : '🔥',
+      explosion : '💥'
+    };
+
+    const obstacleAvoidRadius = {
+      enemies: 200,
+      tanks: 300,
+      road_collapse: 10,
+      bridge_collapse: 10,    
+      fire: 300,
+      explosion: 300
+    };
+
+    const barbedWireLocations = [
+      [37.5591694, 126.9201664], [37.5744183, 126.9395196], [37.5845585, 126.9401366], [37.5484337, 126.957301], [37.5723649, 126.9241311],
+      [37.6081996, 126.9145489], [37.5543075, 126.9119791], [37.5601253, 126.910081], [37.5961737, 126.9452551], [37.6436542, 126.9292777]
+    ];
+
+    const rockfallLocations = [
+      [37.612434, 126.9319501], [37.560349, 126.8971983], [37.5617186, 126.9539307], [37.557246, 126.9181588], [37.5599634, 126.9492454],
+      [37.5769821, 126.9197664], [37.5501543, 126.9436658], [37.5698774, 126.9019931], [37.5907135, 126.9138166], [37.6451976, 126.9245454]
+    ];
+
+    let obstacleEdges = [];
+    let obstacleMarkers = [];
+
+    const obstacleIcon = L.divIcon({
+      html: '<span style="font-size: 24px;">⛔</span>',
+      className: '',
+      iconSize: [10, 10],
+      iconAnchor: [12, 24]
+    });
+
+    function addEdgeHighlight(edgeCoords, color) {
+      const edgeLine = L.polyline(edgeCoords, {
+        color: color,
+        weight: 5,
+        opacity: 0.8,
+        dashArray: '10, 10'
+      }).addTo(map);
+      edgeLine.isObstacle = true;
+      obstacleEdges.push(edgeLine);
+    }
+
+    function clearObstacleEdges() {
+      obstacleEdges.forEach(edgeLine => map.removeLayer(edgeLine));
+      obstacleEdges = [];
+    }
+
+    function clearObstacleMarkers() {
+      obstacleMarkers.forEach(marker => map.removeLayer(marker));
+      obstacleMarkers = [];
+    }
+
+    function distancePointToSegment(p, p1, p2) {
+      const x = p.lat, y = p.lng;
+      const x1 = p1.lat, y1 = p1.lng;
+      const x2 = p2.lat, y2 = p2.lng;
+      const A = x - x1, B = y - y1, C = x2 - x1, D = y2 - y1;
+      const dot = A * C + B * D;
+      const len_sq = C * C + D * D;
+      let param = -1;
+      if (len_sq !== 0) param = dot / len_sq;
+      let xx, yy;
+      if (param < 0) { xx = x1; yy = y1; }
+      else if (param > 1) { xx = x2; yy = y2; }
+      else { xx = x1 + param * C; yy = y1 + param * D; }
+      const dx = x - xx, dy = y - yy;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function findClosestEdge(obstacleCoord, allEdges) {
+      let minDistance = Infinity;
+      let closestEdge = null;
+      const p = L.latLng(obstacleCoord);
+      allEdges.forEach(edge => {
+        const latlngs = edge.getLatLngs();
+        for (let i = 0; i < latlngs.length - 1; i++) {
+          const segment = [latlngs[i], latlngs[i + 1]];
+          const dist = distancePointToSegment(p, segment[0], segment[1]);
+          if (dist < minDistance) {
+            minDistance = dist;
+            closestEdge = segment;
+          }
+        }
+      });
+      return closestEdge ? [closestEdge] : [];
+    }
+
+    function addSpecialObstacleMarkersAndEdges(locations, color) {
+      locations.forEach(coord => {
+        const marker = L.marker(coord, { icon: obstacleIcon }).addTo(map);
+        marker.isObstacle = true;
+        obstacleMarkers.push(marker);
+        const edges = findClosestEdge(coord, allMapEdges);
+        if (edges.length > 0) {
+          edges.forEach(edge => addEdgeHighlight(edge, color));
+        }
+      });
+    }
+
+    function updateObstacles(selected) {
+      clearObstacleEdges();
+      clearObstacleMarkers();
+      if (selected.includes('barbedWire')) addSpecialObstacleMarkersAndEdges(barbedWireLocations, 'blue');
+      if (selected.includes('rockfall')) addSpecialObstacleMarkersAndEdges(rockfallLocations, 'red');
+    }
+
+    const btnBarbedWire = document.getElementById('btnBarbedWire');
+    const btnRockfall = document.getElementById('btnRockfall');
+    let selectedObstacles = [];
+    [btnBarbedWire, btnRockfall].forEach(btn => {
+      btn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const obstacleType = btn.id === 'btnBarbedWire' ? 'barbedWire' : 'rockfall';
+        const index = selectedObstacles.indexOf(obstacleType);
+        if (index === -1) {
+          selectedObstacles.push(obstacleType);
+          btn.classList.add('active');
+        } else {
+          selectedObstacles.splice(index, 1);
+          btn.classList.remove('active');
+        }
+        updateObstacles(selectedObstacles);
+      });
+    });
+
+    const map = L.map('map', {
+      zoomControl: false,
+      maxBounds: [[37.4133, 126.7341], [37.7151, 127.2693]],
+      maxBoundsViscosity: 1.0,
+      minZoom: 11,
+      maxZoom: 18
+    }).setView([37.57, 126.93], 13);
+
+    const baseLayers = {
+      osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM contributors' }),
+      satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: 'Tiles © Esri' }),
+      topo: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17, attribution: '© OSM & OpenTopoMap' })
+    };
+    L.control.attribution({ position: 'bottomleft' }).addTo(map);
+    let currentLayer = baseLayers.osm.addTo(map);
+    window.currentBase = 'osm';
+
+    let allMapEdges = [];
+    fetch('{{ url_for("static", filename="converted_edges.geojson") }}')
+      .then(res => res.json())
+      .then(data => {
+        const edgesLayer = L.geoJSON(data, { style: { color: 'gray', weight: 2, opacity: 0 } }).addTo(map);
+        edgesLayer.eachLayer(layer => allMapEdges.push(layer));
+      });
+
+    fetch('{{ url_for("static", filename="converted_nodes.geojson") }}')
+      .then(res => res.json())
+      .then(data => {
+        L.geoJSON(data, {
+          pointToLayer: (feature, latlng) => L.circleMarker(latlng, { radius: 3, fillColor: "gray", color: "#e0e0e0", weight: 0.7, opacity: 0, fillOpacity: 0 })
+        }).addTo(map);
+      });
+
+    const legend = L.control({ position: 'bottomright' });
+    legend.onAdd = function () {
+      const div = L.DomUtil.create('div', 'info legend');
+      div.id = "legendBox";
+      div.style.background = 'white';
+      div.style.padding = '8px';
+      div.style.fontSize = '13px';
+      div.style.boxShadow = '0 0 5px rgba(0,0,0,0.3)';
+      div.style.borderRadius = '5px';
+      div.innerHTML = `<b>📌 알고리즘 색상</b><br>
+        <div class="legend-item" style="display:flex;align-items:center;gap:6px;margin:2px 0;"><span style="display:inline-block;width:12px;height:12px;background:red;"></span><span id="legendDStarLabel">D* Lite</span></div>
+        <div class="legend-item" style="display:flex;align-items:center;gap:6px;margin:2px 0;"><span style="display:inline-block;width:12px;height:12px;background:blue;"></span><span id="legendCCHLabel">CCH + A*</span></div>
+        <div class="legend-item" style="display:flex;align-items:center;gap:6px;margin:2px 0;"><span style="display:inline-block;width:12px;height:12px;background:green;"></span><span id="legendRTAALabel">RTAA*</span></div>`;
+      return div;
+    };
+    legend.addTo(map);
+
+    function updateMgrsBox(startLL, endLL, precision = 5) {
+      try {
+        const M = (window.mgrs || mgrs);
+        if (!M || typeof M.forward !== 'function') throw new Error('mgrs.forward not available');
+        const s = formatMgrs(M.forward([startLL[1], startLL[0]], precision));
+        const e = formatMgrs(M.forward([endLL[1], endLL[0]], precision));
+        document.getElementById('mgrs-start').textContent = formatMgrs(s);
+        document.getElementById('mgrs-end').textContent = formatMgrs(e);
+        document.getElementById('mgrsBox').style.display = 'block';
+      } catch (err) { console.warn('MGRS 변환 실패:', err); }
+    }
+
+    const avoidCenters = [];
+    let avoidCircles = [];
+    let avoidMarkers = [];
+
+    function getObstacleLabel(value) {
+      const labels = { enemies: '북한군', tanks: '북한전차', fire: '화재', explosion: '폭발', road_collapse: '도로붕괴', bridge_collapse: '다리붕괴' };
+      return labels[value] || '알 수 없는 장애물';
+    }
+
+    const MAX_SNAP_DISTANCE = 5;
+
+    function getClosestPointOnLine(lineLatLngs, point) {
+      let minDist = Infinity, closestPoint = null;
+      for (let i = 0; i < lineLatLngs.length - 1; i++) {
+        const segA = lineLatLngs[i], segB = lineLatLngs[i + 1];
+        const candidate = projectPointOnSegment(point, segA, segB);
+        const d = haversine(point.lat, point.lng, candidate.lat, candidate.lng);
+        if (d < minDist) { minDist = d; closestPoint = candidate; }
+      }
+      return { closestPoint, minDist };
+    }
+
+    function projectPointOnSegment(p, a, b) {
+      const ax = a.lng, ay = a.lat, bx = b.lng, by = b.lat, px = p.lng, py = p.lat;
+      const abx = bx - ax, aby = by - ay, apx = px - ax, apy = py - ay;
+      const ab2 = abx * abx + aby * aby;
+      let t = (apx * abx + apy * aby) / ab2;
+      t = Math.max(0, Math.min(1, t));
+      return L.latLng(ay + aby * t, ax + abx * t);
+    }
+
+    function findClosestPointOnAnyEdge(pointLL) {
+      if (!allMapEdges || allMapEdges.length === 0) return L.latLng(pointLL);
+      let best = null, bestD = Infinity;
+      allMapEdges.forEach(edge => {
+        const coords = edge.getLatLngs();
+        for (let i = 0; i < coords.length - 1; i++) {
+          const cand = projectPointOnSegment(pointLL, coords[i], coords[i + 1]);
+          const d = haversine(pointLL.lat, pointLL.lng, cand.lat, cand.lng);
+          if (d < bestD) { bestD = d; best = cand; }
+        }
+      });
+      return best || L.latLng(pointLL);
+    }
+
+    function snapRouteToEdges(latlngs, stepMeters = 15) {
+      if (!Array.isArray(latlngs) || latlngs.length < 2 || !allMapEdges || allMapEdges.length === 0) return latlngs;
+      const snapped = [];
+      for (let i = 0; i < latlngs.length - 1; i++) {
+        const A = L.latLng(latlngs[i]), B = L.latLng(latlngs[i + 1]);
+        const dist = haversine(A.lat, A.lng, B.lat, B.lng);
+        const samples = Math.max(1, Math.ceil(dist / stepMeters));
+        for (let k = 0; k <= samples; k++) {
+          const t = k / samples;
+          const interp = L.latLng(A.lat + (B.lat - A.lat) * t, A.lng + (B.lng - A.lng) * t);
+          const snappedPt = findClosestPointOnAnyEdge(interp);
+          if (snapped.length === 0 || snappedPt.distanceTo(snapped[snapped.length - 1]) > 0.5) {
+            snapped.push(snappedPt);
+          }
+        }
+      }
+      return snapped;
+    }
+
+    function createObstacleMarker(latlng, obstacleType, count = 1) {
+      let finalLatLng = latlng;
+      if (obstacleType === 'road_collapse' || obstacleType === 'bridge_collapse') {
+        let snapped = null, minDist = Infinity;
+        allMapEdges.forEach(edge => {
+          const { closestPoint, minDist: d } = getClosestPointOnLine(edge.getLatLngs(), latlng);
+          if (d < minDist) { minDist = d; snapped = closestPoint; }
+        });
+        if (snapped && minDist <= MAX_SNAP_DISTANCE) finalLatLng = snapped;
+        else { alert("도로가 아닌 곳에는 도로붕괴나 다리붕괴를 추가할 수 없습니다."); return; }
+      }
+      const emoji = obstacleIcons[obstacleType] || '❓';
+      const radius = obstacleAvoidRadius[obstacleType] || 100;
+      const marker = L.marker(finalLatLng, { icon: L.divIcon({ className: 'emoji-icon', html: `<div>${emoji}</div>` }), opacity: 1 }).addTo(map);
+      marker.isObstacle = true;
+      marker.on('click', () => {
+        if (confirm("이 장애물을 삭제하시겠습니까?")) {
+          const idx = avoidMarkers.indexOf(marker);
+          if (idx !== -1) {
+            map.removeLayer(marker); map.removeLayer(avoidCircles[idx]);
+            avoidMarkers.splice(idx, 1); avoidCircles.splice(idx, 1); avoidCenters.splice(idx, 1);
+          }
+        }
+      });
+      const circle = L.circle(finalLatLng, { radius: radius, color: 'red', weight: 2, fillColor: '#f03', fillOpacity: 0.4, opacity: 0.8 }).addTo(map);
+      circle.isObstacle = true;
+      avoidMarkers.push(marker);
+      avoidCircles.push(circle);
+      avoidCenters.push({ lat: finalLatLng.lat, lon: finalLatLng.lng, type: obstacleType, count: count });
+      marker.bindPopup(`${getObstacleLabel(obstacleType)} (수량: ${count})`).openPopup();
+    }
+
+    let control = null, routeCoords = [], animIndex = 0, animTimer = null, marker = null;
+    let startPointMarker = null, endPointMarker = null;
+    let obstacleLayers = [];
+    const routeLayers = { dlite: null, cch_a: null, rtaa: null };
+    const algoResults = { dlite: null, cch_a: null, rtaa: null };
+    const cumulativeNodes = { dlite: 0, cch_a: 0, rtaa: 0 };
+
+    function clearRouteLayers() {
+      Object.keys(routeLayers).forEach(k => {
+        if (routeLayers[k]) map.removeLayer(routeLayers[k]);
+        routeLayers[k] = null;
+      });
+      if (control) { map.removeControl(control); control = null; }
+    }
+
+    function purgeAllObstacleLayers() {
+      map.eachLayer(l => { if (l && l.isObstacle) map.removeLayer(l); });
+      obstacleEdges.length = 0; obstacleMarkers.length = 0; avoidMarkers.length = 0;
+      avoidCircles.length = 0; avoidCenters.length = 0;
+      document.querySelectorAll('.obstacle-label.active, .obstacle-label.selected').forEach(el => el.classList.remove('active', 'selected'));
+      document.querySelectorAll('.obstacle-inline-input').forEach(inp => inp.value = '');
+      document.getElementById('btnBarbedWire')?.classList.remove('active');
+      document.getElementById('btnRockfall')?.classList.remove('active');
+      selectedObstacles = []; selectedObstacle = null;
+    }
+
+    const START_ICON = L.icon({ iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png', shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png', iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41] });
+    const END_ICON = L.icon({ iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png', shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png', iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41] });
+
+    function placeStartEndMarkers(startLL, endLL) {
+      if (startPointMarker) map.removeLayer(startPointMarker);
+      if (endPointMarker) map.removeLayer(endPointMarker);
+      startPointMarker = L.marker(startLL, { icon: START_ICON }).addTo(map).bindPopup('출발');
+      endPointMarker = L.marker(endLL, { icon: END_ICON }).addTo(map).bindPopup('도착');
+    }
+
+    function haversine(lat1, lon1, lat2, lon2) {
+      const R = 6371000, dLat = (lat2 - lat1) * Math.PI / 180, dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function formatMgrs(mgrsStr) {
+      if (typeof mgrsStr !== 'string') return mgrsStr;
+      const s = mgrsStr.toUpperCase().replace(/\s+/g, '');
+      const m = s.match(/^(\d{1,2}[C-HJ-NP-X])([A-HJ-NP-Z]{2})(\d+)$/i);
+      if (!m) return mgrsStr;
+      const [, gzd, grid, rest] = m;
+      if (rest.length % 2 !== 0) return `${gzd} ${grid} ${rest}`;
+      const half = rest.length / 2;
+      return `${gzd} ${grid} ${rest.slice(0, half)} ${rest.slice(half)}`;
+    }
+
+    function estimateSpeedKmh(distanceM) {
+      const d = distanceM / 1000;
+      if (d <= 2) return 20; if (d <= 10) return 35; if (d <= 30) return 50; return 70;
+    }
+
+    function calcMetricsFromPath(path, maybeMetrics) {
+      let dist = 0;
+      for (let i = 0; i < path.length - 1; i++) dist += haversine(path[i][0], path[i][1], path[i + 1][0], path[i + 1][1]);
+      const serverTime = maybeMetrics?.time ?? maybeMetrics?.time_sec ?? maybeMetrics?.time_s ?? null;
+      const distanceM = maybeMetrics?.distance ?? maybeMetrics?.distance_m ?? dist;
+      let timeSec = serverTime, estimated = false;
+      if (timeSec == null) {
+        timeSec = distanceM / (estimateSpeedKmh(distanceM) * 1000 / 3600);
+        estimated = true;
+      }
+      return { distanceM, timeSec, estimated };
+    }
+
+    function fmtMeters(m) { return m == null ? '–' : m >= 1000 ? (m / 1000).toFixed(2) + ' km' : Math.round(m) + ' m'; }
+    function fmtTimeKo(s) {
+      if (s == null || isNaN(s)) return '–';
+      const total = Math.round(s), m = Math.floor(total / 60), sec = total % 60;
+      if (m > 0 && sec > 0) return `${m}분 ${sec}초`; if (m > 0) return `${m}분`; return `${sec}초`;
+    }
+
+    function updateAlgoTabTimes() {
+      const labelByKey = { dlite: 'D* Lite', cch_a: 'CCH + A*', rtaa: 'RTAA*' };
+      document.querySelectorAll('.seg-btn').forEach(btn => {
+        const key = btn.dataset.algo;
+        if (key === 'all') { btn.innerHTML = `<span class="label">전체</span>`; return; }
+        btn.innerHTML = `<span class="label">${labelByKey[key]}</span>`;
+      });
+    }
+
+    function toLeafletLatLngs(coords) {
+      if (!Array.isArray(coords) || !coords.length) return [];
+      const [a, b] = coords[0];
+      const looksLikeLatLng = Math.abs(a) <= 90 && Math.abs(b) <= 180;
+      return coords.map(([x, y]) => looksLikeLatLng ? L.latLng(x, y) : L.latLng(y, x));
+    }
+
+    function showOnly(algoKey) {
+      Object.entries(routeLayers).forEach(([k, layer]) => {
+        if (layer) layer.setStyle({ opacity: k === algoKey ? 0.9 : 0.2 });
+      });
+    }
+
+    function showAllRoutes() {
+      Object.values(routeLayers).forEach(layer => {
+        if (layer) layer.setStyle({ opacity: 0.9 });
+      });
+      document.querySelectorAll('.seg-btn.active').forEach(b => b.classList.remove('active'));
+      updateMetricsUI(null);
+    }
+
+    function focusRoute(algoKey, pad = 0.18) {
+      const layer = routeLayers[algoKey];
+      if (layer) map.fitBounds(layer.getBounds().pad(pad));
+    }
+
+    function focusAllRoutes(pad = 0.18) {
+      const allLatLngs = Object.values(routeLayers).flatMap(layer => layer ? layer.getLatLngs() : []);
+      if (allLatLngs.length) map.fitBounds(L.latLngBounds(allLatLngs).pad(pad));
+    }
+
+    function updateMetricsUI(algoKey) {
+      const distEl = document.getElementById('metric-distance'), timeEl = document.getElementById('metric-time');
+      if (!algoKey || algoKey === 'all') { distEl.textContent = '-'; timeEl.textContent = '-'; return; }
+      const r = algoResults[algoKey];
+      if (!r || !r.metrics) { distEl.textContent = '-'; timeEl.textContent = '-'; return; }
+      distEl.textContent = fmtMeters(r.metrics.distanceM);
+      timeEl.textContent = fmtTimeKo(r.metrics.timeSec);
+    }
+
+    async function getNodeIdFromLatLng(lat, lon) {
+      const res = await fetch(`/get_node_id?lat=${lat}&lon=${lon}`);
+      if (!res.ok) throw new Error('get_node_id 실패');
+      const data = await res.json();
+      if (!data || typeof data.node_id !== 'number') throw new Error('node_id 없음');
+      return data.node_id;
+    }
+
+    function drawAlgoPath(coords, algo) {
+      const colorMap = { dlite: 'red', cch_a: 'blue', rtaa: 'green' };
+      if (routeLayers[algo]) map.removeLayer(routeLayers[algo]);
+      const latlngs = toLeafletLatLngs(coords);
+      const snapped = snapRouteToEdges(latlngs, 15);
+      const layer = L.polyline(snapped, { weight: 5, opacity: 0.9, color: colorMap[algo] || 'black' }).addTo(map);
+      routeLayers[algo] = layer;
+      return layer.getLatLngs();
+    }
+
+    let geocodeInProgress = false;
+    async function geocode(address) {
+      const m = String(address).trim().match(/^([+-]?\d+(?:\.\d+)?)[,\s]+([+-]?\d+(?:\.\d+)?)$/);
+      if (m) return [parseFloat(m[1]), parseFloat(m[2])];
+      if (geocodeInProgress) return null;
+      geocodeInProgress = true;
+      try {
+        const res = await fetch('/api/geocode?q=' + encodeURIComponent(address));
+        if (res.ok) {
+          const data = await res.json();
+          if (data.documents && data.documents.length > 0) return [parseFloat(data.documents[0].y), parseFloat(data.documents[0].x)];
+        }
+        const osm = await fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(address));
+        if (osm.ok) {
+          const arr = await osm.json();
+          if (arr && arr.length > 0) return [parseFloat(arr[0].lat), parseFloat(arr[0].lon)];
+        }
+      } catch (e) { console.error('geocode error', e); }
+      finally { geocodeInProgress = false; }
+      return null;
+    }
+
+    document.querySelectorAll('.seg-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const algo = btn.dataset.algo;
+        document.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        if (algo === 'all') { showAllRoutes(); focusAllRoutes(); }
+        else { showOnly(algo); updateMetricsUI(algo); focusRoute(algo); }
+      });
+    });
+
+    const manualLatInput = document.getElementById('manualLatInput');
+    const manualLngInput = document.getElementById('manualLngInput');
+    const addManualObstacleBtn = document.getElementById('addManualObstacleBtn');
+
+    addManualObstacleBtn.addEventListener('click', () => {
+      const lat = parseFloat(manualLatInput.value), lng = parseFloat(manualLngInput.value);
+      if (isNaN(lat) || isNaN(lng)) return alert("유효한 위도, 경도 값을 입력해주세요.");
+      if (!selectedObstacle) return alert("먼저 방해요소를 선택하세요.");
+      const inputEl = document.querySelector(`.obstacle-label[data-value="${selectedObstacle}"]`).nextElementSibling;
+      const count = parseInt(inputEl.value, 10) || 1;
+      createObstacleMarker(L.latLng(lat, lng), selectedObstacle, count);
+      manualLatInput.value = ''; manualLngInput.value = '';
+    });
+
+    map.on('click', async function (e) {
+      if (!selectedObstacle) return;
+      const inputEl = document.querySelector(`.obstacle-label[data-value="${selectedObstacle}"]`).nextElementSibling;
+      const count = parseInt(inputEl.value, 10) || 1;
+      createObstacleMarker(e.latlng, selectedObstacle, count);
+    });
+
+    resetBtn.onclick = function () {
+      document.getElementById('mgrsBox').style.display = 'none';
+      document.getElementById('start').value = ''; document.getElementById('end').value = '';
+      clearRouteLayers();
+      purgeAllObstacleLayers();
+      if (startPointMarker) map.removeLayer(startPointMarker); startPointMarker = null;
+      if (endPointMarker) map.removeLayer(endPointMarker); endPointMarker = null;
+      document.getElementById('algoTabs').style.display = 'none';
+      addFavoriteBtn.style.display = 'none';
+      lastSearchedRoute = null;
+    };
+
+    routeBtn.onclick = async function () {
+      const startText = document.getElementById('start').value.trim();
+      const endText = document.getElementById('end').value.trim();
+      if (!startText || !endText) return alert("출발지와 도착지를 입력해주세요.");
+      const startCoords = await geocode(startText);
+      const endCoords = await geocode(endText);
+      if (!startCoords || !endCoords) return alert("주소를 찾을 수 없습니다.");
+      clearRouteLayers();
+      placeStartEndMarkers(startCoords, endCoords);
+      updateMgrsBox(startCoords, endCoords);
+      const startNodeId = await getNodeIdFromLatLng(startCoords[0], startCoords[1]);
+      const endNodeId = await getNodeIdFromLatLng(endCoords[0], endCoords[1]);
+      const dangerItems = avoidCenters.map(o => ({ lat: o.lat, lon: o.lon, type: o.type, count: o.count }));
+      const res = await fetch("/find_path", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          start: startCoords, end: endCoords, start_node_id: startNodeId, end_node_id: endNodeId,
+          algorithms: ["dlite", "cch_a", "rtaa"], danger_coords: dangerItems,
+          start_address: startText, goal_address: endText
+        })
+      });
+      if (!res.ok) return alert("서버에서 경로를 받아오는데 실패했습니다.");
+      const data = await res.json();
+      if (!data.paths) return alert("경로 정보가 없습니다.");
+      lastSearchedRoute = { start_address: startText, start_lat: startCoords[0], start_lon: startCoords[1], goal_address: endText, goal_lat: endCoords[0], goal_lon: endCoords[1] };
+      addFavoriteBtn.style.display = 'block';
+      const allLatLngs = [];
+      ["dlite", "cch_a", "rtaa"].forEach(algo => {
+        const result = data.paths[algo];
+        if (!result || result.error || !result.path || !result.path.length) { algoResults[algo] = null; return; }
+        const drawn = drawAlgoPath(result.path, algo);
+        allLatLngs.push(...drawn);
+        const metrics = calcMetricsFromPath(result.path, result);
+        cumulativeNodes[algo] += result.steps ?? result.path?.length ?? 0;
+        metrics.nodeCount = cumulativeNodes[algo];
+        algoResults[algo] = { path: result.path, metrics };
+      });
+      updateAlgoTabTimes();
+      if (allLatLngs.length > 0) map.fitBounds(L.latLngBounds(allLatLngs).pad(0.15));
+      document.getElementById('algoTabs').style.display = 'block';
+      showAllRoutes();
+      focusAllRoutes();
+    };
+
+    const handle = document.getElementById('toggleSidebar');
+    if (sidebar && handle) {
+      handle.addEventListener('click', () => {
+        sidebar.classList.toggle('closed');
+        handle.textContent = sidebar.classList.contains('closed') ? '▶' : '◀';
+      });
+    }
+
+    document.querySelector('.swap-btn').addEventListener('click', () => {
+      const start = document.getElementById('start'), end = document.getElementById('end');
+      const temp = start.value; start.value = end.value; end.value = temp;
+    });
+
+    window.setBasemap = function (name) {
+      if (!name || !baseLayers[name]) return;
+      if (window.currentLayer) map.removeLayer(window.currentLayer);
+      window.currentLayer = baseLayers[name].addTo(map);
+      document.querySelectorAll('.style-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.style === name));
+    };
+    document.querySelector('.map-style-switcher').addEventListener('click', (e) => {
+      const btn = e.target.closest('.style-btn');
+      if (btn) setBasemap(btn.dataset.style);
+    });
+    setBasemap(window.currentBase || 'osm');
+
+    document.querySelectorAll('.obstacle-label').forEach(el => {
+      el.addEventListener('click', () => {
+        const isAlreadySelected = el.classList.contains('selected');
+        document.querySelectorAll('.obstacle-label').forEach(btn => btn.classList.remove('selected'));
+        if (!isAlreadySelected) {
+          el.classList.add('selected');
+          selectedObstacle = el.dataset.value;
+        } else {
+          selectedObstacle = null;
+        }
+      });
+    });
+
+    const stopList = ["click", "mousedown", "mouseup", "touchstart", "touchend", "dblclick", "contextmenu", "wheel"];
+    stopList.forEach(ev => sidebar.addEventListener(ev, (e) => e.stopPropagation()));
+    if (window.L && sidebar) {
+      L.DomEvent.disableClickPropagation(sidebar);
+      L.DomEvent.disableScrollPropagation(sidebar);
+    }
+  });
+</script>
+
+{% endblock %}

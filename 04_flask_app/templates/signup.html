@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>회원가입 - TacNav -R</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
+
+  <style>
+    /* ===== 밝은 민트 톤으로 전환 (기능 유지, 스타일만 변경) ===== */
+    :root{
+      --ink:#0d2b1f;
+      --muted:rgba(0,0,0,.75);
+      --accent:#2aa36a;          /* 버튼/포커스 메인 컬러 */
+      --focus:rgba(42,163,106,.20);
+      --edge-soft: rgba(0,0,0,.14);
+      --bg:#eaf8f1;
+    }
+
+    *{ box-sizing:border-box; }
+
+    /* 레이아웃/배경 */
+    body{
+      margin:0; min-height:100vh;
+      font-family:'Pretendard',system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+      color:var(--ink); background:var(--bg);
+      display:flex; position:relative;
+      overflow-y:auto;
+    }
+    .bg,.bg-front{ position:fixed; inset:0; pointer-events:none; }
+    .bg-front{
+      z-index:1;
+      /* 로그인과 동일 배경 사용 */
+      background: url("{{ url_for('static', filename='img/login_signup.png') }}") center/cover no-repeat;
+      opacity:.96; filter:saturate(.9) brightness(1.02);
+    }
+
+    /* 오른쪽 60% 영역을 사용하고, 그 안에서 중앙 정렬 */
+    .wrap, .wrap * { box-sizing:border-box; }
+    .wrap{
+      width:60%; margin-left:auto;            /* 오른쪽 60% 차지 */
+      display:flex; flex-direction:column;    /* 중앙 정렬 컨테이너 */
+      justify-content:center; align-items:center;
+      padding:0 5%;
+      position:relative; z-index:5;
+      background:transparent !important;      /* 기존 어두운 패널 제거 */
+      border:none !important; border-radius:0 !important;
+      box-shadow:none !important; backdrop-filter:none !important;
+      text-align:center;
+    }
+  /* 로고 글씨 */
+    .brand{
+      display:flex;
+      align-items:center;      
+      justify-content:center;  
+      gap:12px;                
+      margin-bottom:16px;     
+    }
+
+    .brand-text{
+      font-size:40px;
+      font-weight:800;
+      color:#0d2b1f;
+      text-shadow:0 1px 2px rgba(0,0,0,.1);
+    }
+    /* 로고 */
+    .logo{
+      width:100px; height:auto;
+      margin:0 auto 16px; display:block;
+      filter: drop-shadow(0 2px 8px rgba(0,0,0,.10));
+    }
+
+    /* 폼 크기/간격 */
+    form{ width:100%; max-width:480px; }
+
+    /* ===== 입력 요소: 밝은 톤으로 덮어쓰기 ===== */
+    .wrap input, .wrap select{
+      width:100%; height:46px; margin-bottom:12px;
+      padding:12px 14px; border-radius:12px;
+      border:1px solid var(--edge-soft) !important;
+      background:rgba(255,255,255,.95) !important;
+      color:#0d2b1f !important; font-size:15px; outline:none;
+      transition:border .15s, box-shadow .15s, background .15s;
+      box-shadow:0 6px 14px rgba(0,0,0,.08);
+    }
+    .wrap input::placeholder, .wrap select::placeholder{ color:rgba(0,0,0,.45); }
+    .wrap input:hover, .wrap select:hover{ border-color:rgba(0,0,0,.22) !important; }
+    .wrap input:focus, .wrap select:focus{
+      border-color:var(--accent) !important;
+      box-shadow:0 0 0 4px var(--focus) !important;
+      background:#fff !important;
+    }
+
+    /* 주소 행: 원본 기능 유지 (우편번호 버튼 포함) */
+    .addr-row{ display:flex; gap:8px; }
+    #detailAddress{ margin-top:8px; }
+
+
+    /* 우편번호 버튼 */
+    .secondary-btn {
+      height: 46px;
+      padding: 0 14px;
+      border-radius: 12px;
+      border: 1px solid var(--edge-soft) !important;
+      background: rgba(255,255,255,.95);   /* input과 동일 */
+      color: #0d2b1f;
+      font-size: 14px;
+      cursor: pointer;
+      box-shadow: 0 6px 14px rgba(0,0,0,.08); /* input box-shadow와 동일 */
+      transition: background .2s ease, border-color .2s;
+    }
+    .secondary-btn:hover{ background:#f7f7f7; border-color:rgba(0,0,0,.22) !important; }
+
+    /* 날짜 입력 폰트 완전 통일 */
+    input[type="date"],
+    input[type="date"]::-webkit-datetime-edit,
+    input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+    input[type="date"]::-webkit-datetime-edit-year-field,
+    input[type="date"]::-webkit-datetime-edit-month-field,
+    input[type="date"]::-webkit-datetime-edit-day-field,
+    input[type="date"]::-webkit-datetime-edit-text {
+      font-family: 'Pretendard', system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif !important;
+      color:#0d2b1f; /* 사이트 본문색 */
+    }
+
+    /* (선택) 달력 아이콘 클릭 커서 및 색감 조정 */
+    input[type="date"]::-webkit-calendar-picker-indicator {
+      cursor: pointer;
+    }
+
+    /* 값이 비어 있고 포커스도 없을 때 → placeholder처럼 연한 회색 */
+    input[type="date"]:not(:focus):invalid::-webkit-datetime-edit,
+    input[type="date"]:not(:focus):invalid::-webkit-datetime-edit-text,
+    input[type="date"]:not(:focus):invalid::-webkit-datetime-edit-year-field,
+    input[type="date"]:not(:focus):invalid::-webkit-datetime-edit-month-field,
+    input[type="date"]:not(:focus):invalid::-webkit-datetime-edit-day-field {
+      color: rgba(0, 0, 0, 0.45) !important; /* placeholder 색상 */
+}
+
+    /* 제출 버튼 */
+    .wrap button[type="submit"]{
+      width:100%; height:48px;
+      border:0; border-radius:14px;
+      background:var(--accent); color:#fff;
+      font-weight:800; font-size:16px; cursor:pointer;
+      box-shadow:0 10px 22px rgba(42,163,106,.25);
+      transition:transform .05s ease, filter .2s ease;
+    }
+    .wrap button[type="submit"]:hover{ filter:brightness(.98); }
+    .wrap button[type="submit"]:active{ transform:translateY(1px); }
+    .wrap button[type="submit"]:focus{ box-shadow:0 0 0 4px var(--focus); }
+
+    /* 에러/힌트 */
+    .error{
+      background:#ffe8e6;color:#b1241d;border:1px solid #f3c5c0;
+      padding:10px 12px;border-radius:8px;margin-bottom:12px;font-size:14px;text-align:left;
+    }
+    .field{ margin-bottom:8px; text-align:left; }
+    .field > input, .field > select{ margin-bottom:4px; }
+    .hint{ color:#c44; font-size:12px; margin:4px 2px 10px; min-height:1em; }
+    .invalid{ border-color:#d93025 !important; box-shadow:0 0 0 3px rgba(217,48,37,.18) !important; }
+
+    /* 성별 토글 (밝은 톤) */
+    .gender-toggle{ display:flex; gap:10px; justify-content:center; }
+    .gender-toggle input[type="radio"]{ display:none; }
+    .gender-toggle label{
+      flex:1; padding:12px 0;
+      border:1px solid var(--edge-soft) !important; border-radius:12px;
+      text-align:center; cursor:pointer; background:#fff; color:#0d2b1f;
+      font-size:14px; user-select:none; transition:border .15s, box-shadow .15s, background .15s, color .15s;
+    }
+    .gender-toggle input[type="radio"]:checked + label{
+      background:var(--accent); color:#fff; border-color:var(--accent) !important;
+      box-shadow:0 0 0 3px var(--focus) inset;
+    }
+
+    /* 약관 아코디언 (밝은 톤으로 살짝 보정) */
+    .terms details.term{
+      border:1px solid var(--edge-soft) !important;
+      border-radius:12px; background:rgba(255,255,255,.85);
+      margin:10px 0 14px;
+    }
+    .terms summary{
+      display:flex; align-items:center; gap:8px; justify-content:center;
+      padding:12px 14px; cursor:pointer;
+      font-weight:800; font-size:14px; color:#0d2b1f;
+      list-style:none; white-space:nowrap;
+    }
+    .terms summary::-webkit-details-marker{ display:none; }
+    .terms .panel{ padding:10px 14px 12px; color:#0d2b1f; }
+    .terms .panel > .line, .terms label.line{
+      display:grid !important; grid-template-columns:auto 1fr auto; align-items:center; column-gap:10px;
+      width:100%; padding:6px 0;
+    }
+    .terms .line .txt{ font-size:14px; color:#0d2b1f; }
+    .terms input[type="checkbox"]{ width:16px; height:16px; accent-color:#d93025; }
+    .terms .more{
+      justify-self:end; width:84px; height:30px; padding:0 10px;
+      border:1px solid var(--edge-soft) !important; border-radius:8px;
+      background:#fff; color:#0d2b1f; font-size:12px; line-height:28px; cursor:pointer; white-space:nowrap;
+      transition:background .2s, border-color .2s;
+    }
+    .terms .more:hover{ background:#f7f7f7; border-color:rgba(0,0,0,.22) !important; }
+    .terms .term-detail{
+      margin:8px 0 0; padding:10px 12px;
+      background:#f7faf8; border:1px solid rgba(0,0,0,.08);
+      border-radius:8px; color:#0d2b1f; line-height:1.45;
+    }
+    .terms hr{ border:0; border-top:1px solid rgba(0,0,0,.08); margin:10px 0; }
+    .hint[data-for="agreements"]{ margin:8px 14px 10px; }
+
+    .muted{ margin-top:24px; margin-bottom:24px; font-size:13px; color:rgba(0,0,0,.6); text-align:center; }
+    .muted a, .muted a:visited{ color:var(--accent); font-weight:700; text-decoration:none; }
+    .muted a:hover{ text-decoration:underline; }
+
+    @media (max-width: 960px){
+      .wrap{ width:100%; margin:0; padding:5% 6%; }
+      form{ max-width:480px; margin:0 auto; }
+    }
+    @media (max-width: 600px){
+      .logo{ width:130px; }
+    }
+  </style>
+</head>
+<body>
+  <!-- 배경 -->
+  <div class="bg" aria-hidden="true"></div>
+  <div class="bg-front" aria-hidden="true"></div>
+
+  <!-- 오른쪽 60% 영역 중앙 정렬 -->
+  <div class="wrap">
+    <div class="brand">
+      <img class="logo" src="{{ url_for('static', filename='img/mainlogo.png') }}" alt="로고">
+      <span class="brand-text">TacNav -R</span>
+    </div>
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <!-- ===== 원본 폼 구조/네이밍/검증 패턴 그대로 유지 ===== -->
+    <form id="signupForm" action="{{ url_for('signup') }}" method="POST" novalidate>
+      <!-- 아이디 -->
+      <div class="field">
+        <input type="text" name="user_id" id="user_id"
+               placeholder="👤︎ 아이디 (영문 1자 이상 + 숫자 또는 특수문자 1자 이상, 8~20자)"
+               required
+               pattern="(?=.*[A-Za-z])(?=.*(\d|[!@#$%^&*()\-\_=+\.,\?]))[A-Za-z0-9!@#$%^&*()\-\_=+\.,\?]{8,20}"
+               value="{{ prev.user_id|default('') }}">
+        <div class="hint" data-for="user_id"></div>
+      </div>
+
+      <!-- 비밀번호 -->
+      <div class="field">
+        <input type="password" name="user_pw" id="user_pw"
+               placeholder="🔒︎ 비밀번호 (영문 1자 이상 + 숫자 또는 특수문자 1자 이상, 8~20자)"
+               required
+               pattern="(?=.*[A-Za-z])(?=.*(\d|[!@#$%^&*()\-\_=+\.,\?]))[A-Za-z0-9!@#$%^&*()\-\_=+\.,\?]{8,20}">
+        <div class="hint" data-for="user_pw"></div>
+      </div>
+
+      <!-- 비밀번호 확인 -->
+      <div class="field">
+        <input type="password" name="user_pw2" id="user_pw2"
+               placeholder="🔒︎ 비밀번호 확인" required>
+        <div class="hint" data-for="user_pw2"></div>
+      </div>
+
+      <!-- 이름 -->
+      <div class="field">
+        <input type="text"  name="username" id="username"
+               placeholder="👤︎ 이름" required
+               value="{{ prev.username|default('') }}">
+        <div class="hint" data-for="username"></div>
+      </div>
+
+      <!-- 전화번호 -->
+      <div class="field">
+        <input type="tel" name="phone" id="phone"
+               placeholder="📱︎ 전화번호 ( - 없이 10~11자리)"
+               pattern="[0-9]{10,11}" required
+               value="{{ prev.phone|default('') }}">
+        <div class="hint" data-for="phone"></div>
+      </div>
+
+      <!-- 이메일 -->
+      <div class="field">
+        <input type="email" name="email" id="email"
+               placeholder="✉︎ 이메일" required
+               value="{{ prev.email|default('') }}">
+        <div class="hint" data-for="email"></div>
+      </div>
+
+      <!-- 주소 -->
+      <div class="field">
+        <div class="addr-row">
+          <input type="text" name="address" id="address"
+                placeholder="🏠︎ 기본 주소" required
+                value="{{ prev.address|default('') }}">
+          <button type="button" id="btnPostcode" class="secondary-btn">우편번호 찾기</button>
+        </div>
+        <input type="text" name="detailAddress" id="detailAddress"
+              placeholder="🏢︎ 상세 주소 (동/호, 층 등)" 
+              value="{{ prev.detailAddress|default('') }}">
+        <div class="hint" data-for="address"></div>
+        <input type="hidden" name="postcode" id="postcode">
+      </div>
+
+      <!-- 생일 -->
+      <div class="field">
+        <input type="date" name="birth" id="birth"
+               required value="{{ prev.birth|default('') }}">
+        <div class="hint" data-for="birth"></div>
+      </div>
+
+      <!-- 성별 토글 -->
+      <div class="gender-toggle">
+        <input type="radio" id="male" name="gender" value="male" {% if prev.gender=='male' %}checked{% endif %} required>
+        <label for="male">남성</label>
+        <input type="radio" id="female" name="gender" value="female" {% if prev.gender=='female' %}checked{% endif %}>
+        <label for="female">여성</label>
+      </div>
+      <div class="hint" data-for="gender"></div>
+
+      <!-- 약관 아코디언 (원본 유지) -->
+      <div class="terms">
+        <details class="term">
+          <summary>
+            <span class="badge-required">[필수]</span>
+            <span class="term-title">인증 약관 전체동의</span>
+            <span class="chev" aria-hidden="true">▼</span>
+          </summary>
+
+          <div class="panel">
+            <label class="line">
+              <input type="checkbox" id="agreeAll">
+              <span class="txt">전체 항목에 동의</span>
+            </label>
+            <hr>
+
+            <label class="line sub">
+              <input type="checkbox" class="sub-agree" name="agree_privacy" data-required="1">
+              <span class="txt">(필수) 개인정보 수집·이용 동의</span>
+              <button type="button" class="more" aria-expanded="false" aria-controls="d-personal">자세히</button>
+            </label>
+            <div id="d-personal" class="term-detail" hidden>
+              <p>회사는 서비스 제공을 위해 다음과 같이 개인정보를 수집·이용합니다.</p>
+              <ul>
+                <li><strong>수집항목</strong>: 이름, 연락처(휴대전화), 이메일, 주소, 생년월일, 성별</li>
+                <li><strong>수집목적</strong>: 회원가입 및 본인 확인, 고객지원, 서비스 제공</li>
+                <li><strong>보유기간</strong>: 회원 탈퇴 후 1년 또는 법령에 따른 기간</li>
+              </ul>
+            </div>
+
+            <label class="line sub">
+              <input type="checkbox" class="sub-agree" name="agree_unique" data-required="1">
+              <span class="txt">(필수) 고유식별정보 처리 동의</span>
+              <button type="button" class="more" aria-expanded="false" aria-controls="d-unique">자세히</button>
+            </label>
+            <div id="d-unique" class="term-detail" hidden>
+              <p>회사는 관련 법령에 따라 고유식별정보를 아래 목적 범위에서 처리합니다.</p>
+              <ul>
+                <li><strong>수집항목</strong>: 주민등록번호(또는 운전면허번호 등)</li>
+                <li><strong>수집목적</strong>: 본인 인증, 법령상 의무 이행</li>
+                <li><strong>보유기간</strong>: 관계 법령이 정한 기간까지</li>
+              </ul>
+            </div>
+
+            <label class="line sub">
+              <input type="checkbox" class="sub-agree" name="agree_tos" data-required="1">
+              <span class="txt">(필수) 서비스 이용 약관 동의</span>
+              <button type="button" class="more" aria-expanded="false" aria-controls="d-tos">자세히</button>
+            </label>
+            <div id="d-tos" class="term-detail" hidden>
+              <p>이 약관은 서비스 이용과 관련하여 회사와 회원의 권리·의무 및 책임 사항을 규정합니다.</p>
+              <ol>
+                <li><strong>서비스 제공</strong>: 웹/모바일을 통한 서비스 제공 및 개선</li>
+                <li><strong>회원의 의무</strong>: 법령 및 약관 준수, 타인 권리 침해 금지</li>
+                <li><strong>회사의 의무</strong>: 안정적 서비스 제공, 개인정보 보호</li>
+              </ol>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <button type="submit">회원가입</button>
+    </form>
+
+    <div class="muted">
+      이미 계정이 있나요? <a href="{{ url_for('home_page') }}">로그인</a>
+    </div>
+  </div>
+
+  <!-- ===== 기존 스크립트들: 검증/약관/카카오 주소 API (그대로 유지) ===== -->
+  <script>
+    (function(){
+      const f = document.getElementById('signupForm');
+      const MSG = {
+        user_id: '아이디: 영문 1자 이상 + 숫자 또는 특수문자 1자 이상, 8~20자',
+        user_pw: '비밀번호: 영문 1자 이상 + 숫자 또는 특수문자 1자 이상, 8~20자',
+        user_pw2:'비밀번호가 일치하지 않습니다.',
+        username:'이름을 입력하세요.',
+        phone:   '전화번호는 숫자 10~11자리여야 합니다.',
+        email:   '이메일 형식이 올바르지 않습니다.',
+        address: '주소를 입력하세요.',
+        birth:   '생년월일을 선택하세요.',
+        gender:  '성별을 선택하세요.'
+      };
+
+      function hintFor(id){ return f.querySelector('.hint[data-for="'+id+'"]'); }
+      function setError(input, msg){
+        const h = hintFor(input.id);
+        if (h) h.textContent = msg || '';
+        input.classList.toggle('invalid', !!msg);
+      }
+      function checkPattern(input, key){
+        if (!input.checkValidity()) { setError(input, MSG[key]); return false; }
+        setError(input, ''); return true;
+      }
+
+      function validateAll(){
+        let ok = true;
+        ok = checkPattern(f.user_id, 'user_id') && ok;
+        ok = checkPattern(f.user_pw, 'user_pw') && ok;
+        if (!f.user_pw2.value || f.user_pw2.value !== f.user_pw.value){
+          setError(f.user_pw2, MSG.user_pw2); ok = false;
+        } else setError(f.user_pw2, '');
+        ok = checkPattern(f.username, 'username') && ok;
+        ok = checkPattern(f.phone,    'phone')    && ok;
+        ok = checkPattern(f.email,    'email')    && ok;
+        ok = checkPattern(f.address,  'address')  && ok;
+        ok = checkPattern(f.birth,    'birth')    && ok;
+
+        if (!f.querySelector('input[name="gender"]:checked')){
+          hintFor('gender').textContent = MSG.gender; ok = false;
+        } else hintFor('gender').textContent = '';
+
+        return ok;
+      }
+
+      f.addEventListener('submit', function(e){
+        if (!validateAll()) e.preventDefault();
+      });
+
+      f.addEventListener('input', function(e){
+        const id = e.target.id;
+        if (!id) return;
+        if (id === 'user_id')  checkPattern(e.target, 'user_id');
+        if (id === 'user_pw')  { checkPattern(e.target, 'user_pw');
+          if (f.user_pw2.value) {
+            if (f.user_pw2.value !== f.user_pw.value) setError(f.user_pw2, MSG.user_pw2);
+            else setError(f.user_pw2, '');
+          }
+        }
+        if (id === 'user_pw2'){
+          if (f.user_pw2.value !== f.user_pw.value) setError(f.user_pw2, MSG.user_pw2);
+          else setError(f.user_pw2,'');
+        }
+        if (id === 'username') checkPattern(e.target, 'username');
+        if (id === 'phone')    checkPattern(e.target, 'phone');
+        if (id === 'email')    checkPattern(e.target, 'email');
+        if (id === 'address')  checkPattern(e.target, 'address');
+        if (id === 'birth')    checkPattern(e.target, 'birth');
+      });
+    })();
+  </script>
+
+  <script>
+    (function(){
+      const f = document.getElementById('signupForm');
+
+      /* (A) 약관 토글 & 자세히 */
+      const term = document.querySelector('.terms .term');
+      if (term){
+        const all  = term.querySelector('#agreeAll');
+        const subs = Array.from(term.querySelectorAll('.sub-agree'));
+
+        all?.addEventListener('change', ()=>{
+          subs.forEach(cb => cb.checked = all.checked);
+          const h = f.querySelector('.hint[data-for="agreements"]'); if (h) h.textContent = '';
+        });
+        subs.forEach(cb => cb.addEventListener('change', ()=>{
+          if (all) all.checked = subs.every(x => x.checked);
+        }));
+        term.querySelectorAll('.line.sub .more').forEach(btn=>{
+          const pane = document.getElementById(btn.getAttribute('aria-controls'));
+          if (!pane) return;
+          btn.addEventListener('click', ()=>{
+            const open = btn.getAttribute('aria-expanded') === 'true';
+            btn.setAttribute('aria-expanded', String(!open));
+            pane.hidden = open;
+          });
+        });
+      }
+
+      /* (B) 인라인 검증에 약관 포함 */
+      function checkAgreements(){
+        const requiredSubs = Array.from(document.querySelectorAll('.terms .sub-agree[data-required="1"]'));
+        const ok = requiredSubs.every(cb => cb.checked);
+        const h = f.querySelector('.hint[data-for="agreements"]');
+        if (h) h.textContent = ok ? '' : '필수 약관에 동의해 주세요.';
+        return ok;
+      }
+
+      const oldValidateAll = window.validateAll || function(){ return true; };
+      window.validateAll = function(){
+        const fieldsOk = oldValidateAll();
+        const termsOk  = checkAgreements();
+        return fieldsOk && termsOk;
+      };
+
+      f.addEventListener('change', (e)=>{
+        if (e.target.closest('.terms')) checkAgreements();
+      });
+    })();
+  </script>
+
+  <!-- 카카오 우편번호 API -->
+  <script src="//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
+  <script>
+    (function(){
+      const f = document.getElementById('signupForm');
+      const addressEl = document.getElementById('address');
+      const btn = document.getElementById('btnPostcode');
+      const postcodeEl = document.getElementById('postcode');
+      const detailEl = document.getElementById('detailAddress');
+
+      function hintFor(id){ return f.querySelector('.hint[data-for="'+id+'"]'); }
+
+      function openDaumPostcode(){
+        new daum.Postcode({
+          oncomplete: function(data){
+            const road = data.roadAddress;
+            const jibun = data.jibunAddress;
+            const addr = road || jibun || '';
+
+            if (postcodeEl) postcodeEl.value = data.zonecode || '';
+            addressEl.value = addr;
+
+            const extras = [];
+            if (data.buildingName) extras.push(data.buildingName);
+            if (data.bname) extras.push(data.bname);
+            if (extras.length){
+              addressEl.value = addr + ' (' + extras.join(', ') + ')';
+            }
+
+            if (detailEl) detailEl.focus();
+
+            const h = hintFor('address');
+            if (h) h.textContent = `확인됨: ${data.zonecode || ''} ${addressEl.value}`;
+          }
+        }).open();
+      }
+
+      if (btn) btn.addEventListener('click', openDaumPostcode);
+    })();
+  </script>
+</body>
+</html>

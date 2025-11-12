@@ -1,0 +1,869 @@
+{% extends "base.html" %}
+
+{% block title %}장애물 탐지{% endblock %}
+
+{% block head_extra %}
+  <style>
+    /* 맵 스타일 */
+    #map {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 0;
+    }
+        /* 사이드 바 스타일*/
+    .sidebar {
+      position: fixed;
+      top: 100px;
+      left: 40px;
+      width: 320px;
+      height: calc(100vh - 180px);
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15);
+      padding: 1.2rem 1.5rem;
+      overflow-y: auto;
+      z-index: 1001;
+      transform: translateX(0);
+      transition: transform 0.3s ease;
+    }
+
+    .sidebar.closed {
+      transform: translateX(-100%);
+    }
+
+    .sidebar-toggle {
+      position: fixed;
+      top: 50%;
+      left: 0;
+      transform: translateY(-50%);
+      width: 30px;
+      height: 80px;
+      background: white;
+      border: 1px solid #ccc;
+      border-right: none;
+      border-radius: 0 8px 8px 0;
+      z-index: 2000;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ── 출발지, 도착지, 스왑버튼 ── */
+    .naver-input-box {
+      position: relative;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      overflow: hidden;
+      width: 100%;
+      max-width: 320px;
+      background: white;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+
+    .naver-input-box input {
+      width: 100%;
+      border: none;
+      padding: 12px 40px 12px 12px;
+      font-size: 14px;
+      background: transparent;
+      outline: none;
+      display: block;
+    }
+
+    .naver-input-box input:first-child {
+      border-bottom: 1px solid #eee;
+    }
+
+    .naver-input-box .swap-btn {
+      position: absolute;
+      top: 50%;
+      right: 8px;
+      transform: translateY(-50%);
+      width: 28px;
+      height: 28px;
+      border: 1px solid #ccc;
+      border-radius: 50%;
+      background: white;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      z-index: 10;
+      transition: background-color 0.2s ease, border-color 0.2s ease;
+    }
+    /* 마우스 오버 시 네이버 스타일 */
+    .naver-input-box .swap-btn:hover {
+      background-color: #e8f3ff; /* 연한 파란색 */
+      border-color: #1a73e8;     /* 파란색 테두리 */
+    }
+
+    /* 지도 스타일  */
+    .map-style-switcher {
+      position: absolute;
+      top: 100px;
+      right: 20px;
+      z-index: 3000;
+      pointer-events: auto;
+      background: transparent;  /* 배경 완전 투명 */
+      border-radius: 12px;
+      padding: 4px;
+      display: flex;
+      flex-direction: row;  /* 가로 정렬 */
+      gap: 6px;
+    }
+
+    .style-btn {
+      cursor: pointer;
+      text-align: center;
+      padding: 6px;
+      border-radius: 8px;
+      background-color: white;  /* 각 버튼은 흰색 카드처럼 */
+      border: 1px solid #ccc;   /* 기본 회색 테두리 */
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 60px;  /* 카드 크기 고정  */
+      box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+      color: black;  /* 기본 텍스트 색 */
+    }
+
+    .style-btn img {
+      width: 48px;
+      height: 48px;
+      object-fit: cover;
+      border-radius: 4px;
+    }
+
+    .style-btn.active {
+      border: 2px solid #1a73e8;  /* 파란 테두리 */
+      color: #1a73e8;             /* 텍스트도 파란색으로 */
+    }
+
+    /* ===== 주소 자동완성(팝업) ===== */
+    .autocomplete-list{
+      position: absolute;
+      z-index: 1200;            /* 사이드바/토글 위로 */
+      background: #fff;
+      border: none;
+      list-style: none;
+      padding: 0;
+      margin: 2px 0 0;
+      max-height: 150px;
+      overflow-y: auto;
+      width: 100%;
+      box-shadow: 0 8px 20px rgba(0,0,0,.08);
+    }
+    .autocomplete-list li{
+      padding: 6px 10px;
+      font-size: .85rem;
+      border-bottom: 1px solid #eee;
+      cursor: pointer;
+    }
+    .autocomplete-list li:hover{ background-color: #f0f0f0; }
+
+    /* ===== 버튼(기존 스타일 보존) ===== */
+    .btn-primary{
+      display: block;
+      width: 100%;
+      margin-top: 1rem;
+      padding: .75rem;
+      font-size: 1rem;
+      color: #fff;
+      background-color: #3578e5;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background .2s ease;
+    }
+    .btn-primary:hover{ background-color: #2e66c9; }
+
+    .btn-secondary{
+      display: block;
+      width: 100%;
+      margin-top: .5rem;
+      padding: .75rem;
+      font-size: 1rem;
+      color: #333;
+      background-color: #e5e7eb;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background .2s ease;
+    }
+    .btn-secondary:hover{ background-color: #d1d5db; }
+
+    /* ===== 기존 routeBtn 인터랙션 유지 ===== */
+    #routeBtn{ transition: transform .1s ease; }
+    #routeBtn:active{ transform: translateY(2px) scale(.98); }
+
+    /* ===== 자동완성 기준점 ===== */
+    #start, #end{ position: relative; }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div id="map"></div>
+
+  <div class="map-style-container">
+    <div class="map-style-switcher">
+      <div class="style-btn" data-style="osm">
+        <img src="{{ url_for('static', filename='img/일반.png') }}" alt="일반">
+        <div>일반지도</div>
+      </div>
+      <div class="style-btn" data-style="satellite">
+        <img src="{{ url_for('static', filename='img/위성.png') }}" alt="위성">
+        <div>위성지도</div>
+      </div>
+      <div class="style-btn" data-style="topo">
+        <img src="{{ url_for('static', filename='img/지형.png') }}" alt="지형">
+        <div>지형지도</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 토글 버튼 -->
+  <button id="toggleSidebar" class="sidebar-toggle" aria-label="Toggle sidebar">◀</button>
+
+  <div class="route-container">
+      <aside id="sidebar" class="sidebar">
+      <!-- 사이드바 -->
+        <!-- 출발지·도착지 박스 -->
+        <div class="naver-input-box">
+          <input type="text" id="start" placeholder="출발지 입력" autocomplete="off" />
+          <input type="text" id="end" placeholder="도착지 입력" autocomplete="off" />
+          <div class="swap-btn" onclick="swapInputs()">⇅</div>
+        </div>
+          <br /><br />
+        <button id="routeBtn" class="btn-primary">경로 찾기</button>
+        <button id="resetBtn" class="btn-secondary">초기화</button>
+      </aside>
+  </div>
+</div>
+  <!-- 맵 -->
+
+<div id="info" style="margin-top:1rem; font-weight:bold;"></div>
+<div id="coordsInfo" style="margin-top:0.5rem; font-weight:bold; color: #555;"></div>
+
+<div id="resultBox" style="margin-top: 1rem; font-weight: bold; color: #444;"></div>
+<div id="utmInfo" style="margin-top: 0.5rem; font-weight: bold; color: #555;"></div>
+
+<!-- 외부 지도 라이브러리 -->
+<!-- 지도 타일, 마커, 컨트롤(줌 버튼 등) CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<!-- 경로선, 경로 정보 패널 CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
+<!-- 마커 찍기, 지도 이동, 레이어 추가 -->
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<!-- 경로를 자동으로 계산, 경로 탐색, 경로 편집, 여러 경유지 설정 -->
+<script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
+<!-- 좌표계 변환 기능 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
+</style>
+
+<script>
+  let scrolledToMap = false;
+  // 좌표 변환 함수
+  async function geocode(address) {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`);
+    const data = await res.json();
+    if (data.length === 0) return null;
+    return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+  }
+
+  // 군사좌표
+  function toUTMK(lat, lon) {
+    const wgs84 = "+proj=longlat +datum=WGS84 +no_defs";
+    const utmk = "+proj=tmerc +lat_0=38 +lon_0=127.5 +k=0.9996 +x_0=1000000 +y_0=2000000 +ellps=GRS80 +units=m +no_defs";
+    return proj4(wgs84, utmk, [lon, lat]);
+}
+
+  // 지도 초기 위치
+  const map = L.map('map', {
+    zoomControl: false,
+    maxBounds: [[37.4133, 126.7341], [37.7151, 127.2693]], 
+    maxBoundsViscosity: 1.0,
+    minZoom: 11,
+    maxZoom: 18
+  }).setView([37.5665, 126.9780], 14); // 서울
+
+  // 지도 스타일
+  const baseLayers = {
+    osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OSM contributors'
+    }),
+    satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Tiles © Esri'
+    }),
+    topo: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+      maxZoom: 17,
+      attribution: '© OSM & OpenTopoMap'
+    })
+  };
+  L.control.attribution({ position: 'topright' }).addTo(map);
+  let currentLayer = baseLayers.osm.addTo(map);
+
+  (function() {
+    function setSelectedUI(name) {
+      const container = document.querySelector('.map-style-switcher');
+      if (container) {
+        container.querySelectorAll('.style-btn').forEach(btn => {
+          btn.classList.remove('active');
+          btn.classList.toggle('active', btn.dataset.style === name);
+        });
+      }
+      const sel = document.getElementById('basemapSelect');
+      if (sel && sel.value !== name) sel.value = name;
+    }
+
+    function setBase(name) {
+      if (!name || !baseLayers[name]) return;
+      if (currentLayer && map.hasLayer(currentLayer)) map.removeLayer(currentLayer);
+      currentLayer = baseLayers[name].addTo(map);
+      setSelectedUI(name);
+      window.currentBase = name;
+    }
+
+    // 아이콘 버튼
+    const switcher = document.querySelector('.map-style-switcher');
+    if (switcher) {
+      switcher.addEventListener('click', function(e) {
+        const btn = e.target.closest('.style-btn');
+        if (!btn) return;
+        setBase(btn.dataset.style);
+      });
+    }
+
+    // 드롭다운(선택)
+    const sel = document.getElementById('basemapSelect');
+    if (sel) sel.addEventListener('change', function(){ setBase(this.value); });
+
+    // 초기 동기화
+    (function initSync(){
+      // currentLayer가 어떤 것인지 추정해서 selected 표시
+      // 기본값: OSM
+      const preferred = window.currentBase || 'osm';
+      setSelectedUI(preferred);
+    })();
+
+    // 외부에서 호출 가능
+    window.setBasemap = setBase;
+  })();
+
+  // 엣지 가져오기
+  fetch('{{ url_for("static", filename="converted_edges.geojson") }}')
+  .then(res => res.json())
+  .then(data => {
+    L.geoJSON(data, {
+      style: {
+        color: 'gray',
+        weight: 2,
+        opacity: 0
+      }
+    }).addTo(map);
+  });
+
+  // 노드 가져오기
+  fetch('{{ url_for("static", filename="converted_nodes.geojson") }}')
+    .then(res => res.json())
+    .then(data => {
+      L.geoJSON(data, {
+        pointToLayer: (feature, latlng) => {
+          return L.circleMarker(latlng, {
+            radius: 3,
+            fillColor: "gray",
+            color: "#e0e0e0",
+            weight: 0.7,
+            opacity: 0,
+            fillOpacity: 0
+          });
+        }
+      }).addTo(map);
+    });
+
+  // 지도 스타일 변경 이벤트
+  const sel = document.getElementById("basemapSelect");
+  if (sel) {
+    sel.addEventListener("change", function () {
+
+      const selected = this.value;
+      if (currentLayer) map.removeLayer(currentLayer);
+      currentLayer = baseLayers[selected];
+      currentLayer.addTo(map);
+    
+    });
+  }
+
+  let control = null;
+  let startMarker = null;
+  let endMarker = null;
+
+  // 위험지역 예시 
+  const dangerZone = L.circle([38.206, 127.301], {
+    color: "red",
+    fillColor: "#f03",
+    fillOpacity: 0.3,
+    radius: 150,
+  }).addTo(map).bindPopup("위험 지역");
+
+  // 장애물 좌표 저장 및 마커 저장
+  let obstacles = [];
+  let fireMarkers = [];
+  let fireCircles = [];
+
+  // 경로 애니메이션 관련 변수
+  let marker = null;
+  let routeLine = null;
+  let movingMarker = null;
+  let routeCoords = [];
+  let currentStep = 0;
+  let stopAnimation = false;
+
+  let dangerMarkers = [];
+  let pathPolyline = null; 
+  
+  // 지도 클릭 시 장애물 추가 및 경로 재탐색
+  map.on('click', async (e) => {
+    const { lat, lng } = e.latlng;
+
+    fireCircles.forEach(c => map.removeLayer(c));
+    fireCircles = [];
+
+    // 장애물 배열에 추가
+    obstacles = [{ lat, lon: lng }];
+
+    // 장애물 클릭 시
+    const circle = L.circle([lat, lng], {
+      radius: 100,
+      color: 'red',
+      fillColor: 'red',
+      fillOpacity: 0.2
+    }).addTo(map);
+    fireCircles.push(circle);
+
+    // 기존 이모지 제거
+    fireMarkers.forEach(m => map.removeLayer(m));
+    fireMarkers = [];
+    
+    // 이모지 마커 추가
+    const emoji = '🔥'; 
+    const emojiMarker = L.marker([lat, lng], {
+      icon: L.divIcon({
+        className: 'emoji-icon',
+        html: emoji,
+        iconSize: [24, 24]
+      })
+    }).addTo(map);
+    fireMarkers.push(emojiMarker);
+
+  // 이동 애니메이션 중단
+  stopAnimation = true;
+
+  // 출발지, 도착지가 설정되어 있을 때만 경로 재탐색
+  if (startMarker && endMarker && movingMarker) {
+    // 현재 마커 위치를 출발지로 사용
+    const current = movingMarker.getLatLng();
+    const goal = endMarker.getLatLng();
+
+    await runDStarLitePath(
+      [current.lat, current.lng], // 현재 위치를 출발지로
+      [goal.lat, goal.lng],
+      obstacles
+    );
+  }
+});
+
+  // 한 칸씩 이동하는 애니메이션 함수
+  function moveStepByStep() {
+    if (stopAnimation || currentStep >= routeCoords.length) {
+      return;
+    }
+    const latlng = routeCoords[currentStep];
+    movingMarker.setLatLng(latlng);
+    currentStep++;
+
+    setTimeout(() => {
+      if (!stopAnimation) {
+        moveStepByStep();
+      }
+    }, 700);
+  }
+
+  // 경로 그리기
+  function drawPath(path) {
+    const latlngs = path.map(p => [p[1], p[0]]);
+    if (window.routeLine) {
+      map.removeLayer(window.routeLine);
+    }
+    window.routeLine = L.polyline(latlngs, { color: 'blue' }).addTo(map);
+  }
+
+  // 마커 애니메이션
+  function startMarkerAnimation() {
+    if (!routeCoords.length) return;
+
+    if (marker) map.removeLayer(marker);
+
+    marker = L.marker(routeCoords[0]).addTo(map);
+    currentStep = 0;
+
+    function animate() {
+      if (stopAnimation || currentStep >= routeCoords.length) return;
+
+      marker.setLatLng(routeCoords[currentStep]);
+      currentStep++;
+      setTimeout(animate, 400); // 속도 조절
+    }
+
+    animate();
+  }
+
+  function stopMarkerAnimation() {
+    stopAnimation = true;
+  }
+
+  // D* Lite 알고리즘 경로 요청 및 애니메이션 시작 함수
+  async function runDStarLitePath(start, end, obstacles=[]) {
+    // 기존 애니메이션 중단
+    stopAnimation = true;
+
+    // 초기화 (새 경로 시작 위치)
+    currentStep = 0;
+
+    // 서버에 경로 요청
+    const res = await fetch('/run_dlite', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        start: start,
+        goal: end,
+        obstacles: obstacles
+      })
+    });
+
+    const data = await res.json();
+
+    if (data.error) {
+      alert('경로 탐색 실패: ' + data.error);
+      return;
+    }
+
+    routeCoords = data.path.map(coord => [coord[1], coord[0]]); // [lon, lat] -> [lat, lon]
+
+    // 기존 경로 및 마커 제거
+    if (routeLine) map.removeLayer(routeLine);
+    if (movingMarker) map.removeLayer(movingMarker);
+
+    routeLine = L.polyline(routeCoords, {color: 'red'}).addTo(map);
+
+    movingMarker = L.marker(routeCoords[0], {
+      icon: L.icon({
+        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png',
+        shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34],
+        shadowSize: [41, 41]
+      })
+    }).addTo(map);
+
+    // 지도 뷰 조정
+    map.fitBounds(L.latLngBounds([start, end]));
+
+    // 거리 및 경로 길이 표시
+    document.getElementById('resultBox').innerHTML = `
+      🔹 거리: ${data.distance} m<br>
+      🔹 경로 노드 수: ${data.steps}
+   `;
+
+   // 애니메이션 재개
+    stopAnimation = false;
+    moveStepByStep();
+  }
+
+  // 카카오 주소->좌표 변환 API
+  async function geocodekakao(address) {
+    if (geocodeInProgress) return null;
+    geocodeInProgress = true;
+    try {
+      const res = await fetch('/api/geocode?q=' + encodeURIComponent(address));
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      const data = await res.json();
+      if (data.documents && data.documents.length > 0) {
+        return [parseFloat(data.documents[0].y), parseFloat(data.documents[0].x)];
+      }
+    } catch (e) {
+      console.error("geocode 에러:", e);
+    } finally {
+      geocodeInProgress = false;
+    }
+    return null;
+  }
+
+  // 주소 입력값으로 좌표 얻기
+  async function getCoordinatesFromInput(inputId) {
+    const input = document.getElementById(inputId);
+    const address = input.value.trim();
+
+    if (!address) {
+      alert("주소를 입력해주세요.");
+      return null;
+    }
+
+    // 직접 Nominatim API 호출 (클라이언트)
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`);
+    const data = await res.json();
+
+    if (!Array.isArray(data) || data.length === 0) {
+      alert(`"${address}" 주소를 찾을 수 없습니다.`);
+      return null;
+    }
+
+    return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+  }
+
+  // 경로 요청 함수
+  async function fetchRouteAndDrawPath(startLat, startLon, goalLat, goalLon) {
+    try {
+      const res = await fetch(`/route_geojson?start_lat=${startLat}&start_lon=${startLon}&goal_lat=${goalLat}&goal_lon=${goalLon}`);
+      if (!res.ok) {
+        throw new Error("경로 요청 실패");
+      }
+
+      const data = await res.json();
+
+      // 지도에 기존 경로가 있다면 제거
+      if (window.routeLine) {
+        map.removeLayer(window.routeLine);
+      }
+
+      // GeoJSON 데이터로부터 경로 라인 생성
+      window.routeLine = L.geoJSON(data, {
+        style: {
+          color: "blue",
+          weight: 4
+        }
+      }).addTo(map);
+
+      // 경로 거리와 스텝 확인
+      const dist = data.features[0].properties.distance;
+      const steps = data.features[0].properties.steps;
+      console.log("총 거리:", dist);
+      console.log("총 스텝:", steps);
+    } catch (err) {
+      console.error("경로 탐색 오류:", err);
+    }
+  }
+
+  // 경로 찾기 버튼 클릭 이벤트
+  document.getElementById('routeBtn').addEventListener('click', async () => {
+    // dataset 초기화
+    document.getElementById("start").dataset.lat = "";
+    document.getElementById("start").dataset.lon = "";
+    document.getElementById("end").dataset.lat = "";
+    document.getElementById("end").dataset.lon = "";
+
+    const start = await getCoordinatesFromInput("start");
+    const end = await getCoordinatesFromInput("end");
+
+    if (!start || !end) {
+      alert("주소를 정확히 입력하거나 유효한 주소를 사용하세요.");
+      return;
+    }
+
+    // 위도, 경도
+    document.getElementById('coordsInfo').innerHTML =
+      `출발지 좌표: [${start[0].toFixed(6)}, ${start[1].toFixed(6)}] <br>
+       도착지 좌표: [${end[0].toFixed(6)}, ${end[1].toFixed(6)}]`;
+ 
+    const startUTM = toUTMK(start[0], start[1]);
+    const endUTM = toUTMK(end[0], end[1]);
+
+    // 군사좌표
+    document.getElementById('utmInfo').innerHTML = 
+       `출발지 UTM-K: [${startUTM[0].toFixed(2)}, ${startUTM[1].toFixed(2)}] <br>
+        도착지 UTM-K: [${endUTM[0].toFixed(2)}, ${endUTM[1].toFixed(2)}]`;
+
+    // 출발 마커 (파란색)
+    if (startMarker) map.removeLayer(startMarker);
+      startMarker = L.marker(start, {
+      icon: L.icon({
+          iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png',
+          shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+          iconSize: [25, 41],
+          iconAnchor: [12, 41],
+          popupAnchor: [1, -34],
+          shadowSize: [41, 41]
+      })
+    }).addTo(map).bindPopup("출발").openPopup();
+
+    // 도착 마커 (빨간색)
+    if (endMarker) map.removeLayer(endMarker);
+    endMarker = L.marker(end, {
+    icon: L.icon({
+        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+        shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34],
+        shadowSize: [41, 41]
+        })
+    }).addTo(map).bindPopup("도착").openPopup();
+
+    // D* Lite 경로 탐색 및 애니메이션 시작
+    await runDStarLitePath(start, end, obstacles);
+  });
+
+  // 엔터키 눌렀을 때도 경로 찾기 실행
+  ["start", "end"].forEach(id => {
+    document.getElementById(id).addEventListener("keydown", function(event) {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        document.getElementById("routeBtn").click();
+      }
+    });
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    document.getElementById('start').value = '';
+    document.getElementById('end').value = '';
+    document.getElementById('info').innerHTML = '';
+    document.getElementById('coordsInfo').innerHTML = '';
+    document.getElementById('resultBox').innerHTML = '';
+   
+  if (control) {
+    map.removeControl(control);
+    control = null;
+  }
+  if (startMarker) {
+    map.removeLayer(startMarker);
+    startMarker = null;
+  }
+  if (endMarker) {
+    map.removeLayer(endMarker);
+    endMarker = null;
+  }
+  if (routeLine) {
+    map.removeLayer(routeLine);
+    routeLine = null;
+  }
+  if (movingMarker) {
+    map.removeLayer(movingMarker);
+    movingMarker = null;
+  }
+
+  // 장애물 마커 제거
+  fireMarkers.forEach(marker => map.removeLayer(marker));
+  fireMarkers = [];
+
+  // 장애물 반경 제거
+  fireCircles.forEach(c => map.removeLayer(c));
+  fireCircles = [];
+
+  // 장애물 배열 초기화
+  obstacles = [];
+
+  // 경로 변수 초기화
+  routeCoords = [];
+  currentStep = 0;
+
+  // 애니메이션 중지
+  stopAnimation = true;
+  });
+</script>
+
+<style>
+  .moving-icon {
+    font-size: 24px;
+  }
+  .emoji-icon {
+    font-size: 24px;
+    line-height: 24px;
+  }
+</style>
+
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const btn = document.getElementById("toggleSidebar");
+    const sidebar = document.getElementById("sidebar");
+    if (!btn || !sidebar) return;
+    btn.addEventListener("click", () => {
+      const closed = sidebar.classList.toggle("closed");
+      btn.textContent = closed ? "▶" : "◀";
+    });
+  });
+</script>
+
+<!-- 버튼 스왑 기능 -->
+<script>
+function swapInputs() {
+  const start = document.getElementById("start");
+  const end = document.getElementById("end");
+  const temp = start.value;
+  start.value = end.value;
+  end.value = temp;
+}
+</script>
+
+<!-- .style-btn icons or #basemapSelect dropdown -->
+<script>
+(function() {
+  if (typeof L === 'undefined' || typeof map === 'undefined') return;
+
+  window.baseLayers = window.baseLayers || {
+    osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }),
+    satellite: L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+      attribution: 'Tiles &copy; Esri'
+    }),
+    light: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 20,
+      attribution: '&copy; CARTO'
+    }),
+    dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 20,
+      attribution: '&copy; CARTO'
+    })
+  };
+
+  let currentName = window.currentName || null;
+  window.currentLayer = window.currentLayer || null;
+
+  if (!window.currentLayer || !map.hasLayer(window.currentLayer)) {
+    setBase(currentName || 'osm');
+  } else {
+    setSelectedUI(currentName || 'osm');
+  }
+
+  const switcher = document.querySelector('.map-style-switcher');
+  if (switcher) {
+    switcher.addEventListener('click', function(e) {
+      const btn = e.target.closest('.style-btn');
+      if (!btn) return;
+      const name = btn.dataset.style;
+      setBase(name);
+    });
+  }
+
+  const sel = document.getElementById('basemapSelect');
+  if (sel) {
+    sel.addEventListener('change', function() {
+      setBase(this.value);
+    });
+  }
+
+  window.setBasemap = setBase;
+})();
+</script>
+
+{% endblock %}

@@ -1,0 +1,397 @@
+{% extends "base.html" %}
+{% block title %}사용 가이드{% endblock %}
+
+{% block head_extra %}
+<style>
+  html, body { height: 100%; margin: 0; }
+
+  :root{
+    --header-h: 88px;   /* JS로 실제 헤더 높이 주입 */
+    --gap: 22px;
+    --radius: 16px;
+  }
+
+  /* 페이지 기본 래퍼: 헤더 높이만큼 여백 확보, 스크롤 허용 */
+  .page-wrap{
+    min-height: calc(100dvh - var(--header-h));
+    padding: var(--gap);
+    box-sizing: border-box;
+  }
+
+  /* 섹션: 2열(이미지 | 텍스트) */
+  .section{
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr; /* 이미지 약간 더 넓게 */
+    gap: var(--gap);
+    align-items: start; /* 이미지가 커지지 않도록 start */
+    margin-bottom: var(--gap);
+  }
+
+  /* 카드 스타일 (이미지) */
+  .image-card{
+    width: 100%;
+    background: #fff;
+    border-radius: var(--radius);
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+    transition: transform .25s ease, box-shadow .25s ease;
+    box-shadow:
+      18px 28px 70px -18px rgba(0,0,0,.35),
+       6px 10px 24px -8px rgba(0,0,0,.22);
+  }
+  .image-card:hover{ transform: translateY(-2px); }
+  .image-card img{
+    width: 100%;
+    height: auto;          /* ← 이미지 세로는 자동 */
+    object-fit: contain;   /* ← 잘림 방지 */
+    display: block;
+  }
+
+  /* 카드 스타일 (텍스트/설명) - 높이는 JS로 px 주입, 내부 스크롤 */
+  .text-card{
+    display:flex;
+    flex-direction:column;
+    justify-content:flex-start;
+    padding:22px;
+    color:#222;
+    background:transparent;
+    box-shadow:none;
+
+    overflow-y:auto;  /* 내용이 넘치면 내부 스크롤 */
+    min-height:0;     /* Grid/Flex 스크롤 버그 방지 */
+    /* height는 JS가 인라인으로 주입/해제 */
+  }
+
+  .text-card .title{
+    font-weight: 800;
+    font-size: clamp(1.2rem, 1.6vw, 1.6rem);
+    line-height: 1.3;
+    margin: 0 0 18px;
+    text-align: left;
+  }
+
+  /* ===== 불릿 리스트 (Grid + 노란 원) ===== */
+  .text-card ul.bullet-list{
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    max-width: 90%;
+    text-align: left;
+  }
+  .text-card ul.bullet-list > li {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;              /* 불릿과 텍스트 간격 */
+    margin-bottom: 8px;
+    font-size: 0.95rem;
+    color: #444;
+    line-height: 1.6;
+  }
+  .text-card ul.bullet-list > li::before {
+    content: "";
+    flex: 0 0 0.6em;
+    height: 0.6em;
+    border-radius: 50%;
+    background: #f7c800;
+    margin-top: 0.45em;
+  }
+
+  /* 반응형: 모바일에서는 1열로 (이미지 → 설명 순) */
+  @media (max-width: 960px){
+    :root{ --gap: 12px; }
+    .page-wrap{ padding: var(--gap); }
+    .text-card{ padding: 16px; }
+    .section{
+      grid-template-columns: 1fr;
+      align-items: start;
+    }
+    /* 단일열에서는 텍스트 카드 높이 강제값 제거 */
+    .section .text-card{
+      height: auto !important;
+      max-height: none !important;
+    }
+  }
+
+  /* 스크롤바 미세 개선 */
+  .text-card ::-webkit-scrollbar{ width:8px; }
+  .text-card ::-webkit-scrollbar-thumb{ border-radius:8px; background:#d1d5db; }
+
+  /* 알고리즘 표 */
+  .algo-table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:14px;
+    background:#fff;
+    border:1px solid #e5e7eb;
+    border-radius:8px;
+    overflow:hidden;
+  }
+  .algo-table th,
+  .algo-table td{
+    padding:10px 12px;
+    border-bottom:1px solid #eef2f7;
+    vertical-align:top;
+  }
+  .algo-table thead th{
+    background:#f8fafc;
+    font-weight:700;
+  }
+  .algo-table tbody tr:last-child td{
+    border-bottom:none;
+  }
+  .algo-chip{
+    display:inline-block;
+    width:12px; height:12px; border-radius:50%;
+    margin-right:8px; vertical-align:middle;
+    box-shadow:0 0 0 1px rgba(0,0,0,.06) inset;
+  }
+  .algo-chip-label{ vertical-align:middle; }
+</style>
+
+<script>
+  /* 헤더 실제 높이 반영 */
+  function applyHeaderHeight() {
+    const header =
+      document.querySelector('header.navbar') ||
+      document.querySelector('.navbar') ||
+      document.querySelector('.site-header') ||
+      document.querySelector('header');
+    const h = header ? Math.round(header.getBoundingClientRect().height) : 0;
+    document.documentElement.style.setProperty('--header-h', h + 'px');
+  }
+
+  /* 이미지 높이에 텍스트 카드 높이 동기화 */
+  function syncTextCardHeights(){
+    const isSingleColumn = matchMedia('(max-width: 960px)').matches;
+
+    document.querySelectorAll('.section').forEach(sec=>{
+      const imgCard  = sec.querySelector('.image-card');
+      const textCard = sec.querySelector('.text-card');
+      if(!imgCard || !textCard) return;
+
+      // 단일열(모바일)에서는 강제값 해제
+      if(isSingleColumn){
+        textCard.style.height = '';
+        textCard.style.maxHeight = '';
+        return;
+      }
+
+      const h = imgCard.getBoundingClientRect().height;
+      if(h > 0){
+        textCard.style.height = Math.round(h) + 'px';  // 이미지 실제 렌더 높이에 고정
+        textCard.style.maxHeight = Math.round(h) + 'px';
+      }
+    });
+  }
+
+  // 이미지 로드 이후에도 정확히 동기화
+  function bindImageLoadSync(){
+    document.querySelectorAll('.image-card img').forEach(img=>{
+      if(!img.complete){
+        img.addEventListener('load', ()=>syncTextCardHeights(), { once:true });
+      }
+    });
+  }
+
+  function reflow(){
+    applyHeaderHeight();
+    syncTextCardHeights();
+  }
+
+  window.addEventListener('load', ()=>{
+    reflow();
+    bindImageLoadSync();
+  });
+  window.addEventListener('resize', reflow);
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="page-wrap">
+<br><br><br>
+  <!-- 섹션 1: 이미지 | 설명 -->
+  <section class="section">
+    <div class="image-card">
+      <img src="/static/img/추천경로안내.png" alt="추천 경로 안내 이미지">
+    </div>
+    <div class="text-card" id="best-route-notes">
+      <div class="title">추천 경로 안내</div>
+
+      <ol style="margin:0; padding-left:1.1em; line-height:1.55;">
+        <li style="margin-bottom:10px;">
+          <strong>경로 탐색 및 표시</strong>
+          <ul style="margin:6px 0 0 0; padding-left:1.1em;">
+            <li><b>출발지·도착지 입력</b> : 사용자가 주소를 입력합니다.</li>
+            <li><b>서버 요청</b> : 출발지/도착지 위경도 좌표, 노드 ID, 방해요소 정보가 전송됩니다.</li>
+            <li><b>경로 시각화</b> : 경로 표시 · 전체/개별 경로 탭 전환 · 거리/시간이 자동으로 표시됩니다.</li>
+          </ul>
+        </li>
+
+        <li style="margin-bottom:10px;">
+          <strong>사이드바</strong>
+          <ul style="margin:6px 0 0 0; padding-left:1.1em;">
+            <li><b>방해요소 선택</b> : 북한군, 북한전차, 화재, 폭발, 도로붕괴, 다리붕괴.</li>
+            <li><b>수동 입력</b> : 위도·경도 입력 후 “추가”로 방해요소 배치 가능합니다.</li>
+            <li><b>버튼</b> : <b>길찾기 &gt;</b> 탐색 시작 · <b>🔄 다시입력</b> 전체 초기화.</li>
+            <li><b>좌표 표시</b> : 출발지·도착지의 MGRS 좌표를 제공합니다.</li>
+            <li><b>알고리즘 탭</b> : 알고리즘별 예상거리·예상시간을 요약합니다.</li>
+          </ul>
+        </li>
+
+        <li style="margin-bottom:10px;">
+          <strong>방해요소 감지 및 처리</strong>
+          <ul style="margin:6px 0 0 0; padding-left:1.1em;">
+            <li><b>아이콘·반경</b> : 북한군(200m), 전차(300m), 화재(300m), 폭발(300m), 도로붕괴(10m), 다리붕괴(10m).</li>
+            <li><b>특수 버튼</b> : 철조망(파랑), 낙석(빨강) → 서울 특정 위치에 방해요소 지정되어 있고, 버튼을 통해 위치 파악 가능합니다.</li>
+            <li><b>마커 조작</b> : 지도 클릭으로 방해요소 추가하거나 위경도 입력으로 방해요소를 추가합니다. 마커 클릭 시 삭제 여부 확인 후 제거됩니다.</li>
+            <li><b>스냅</b> : 도로/다리 붕괴는 실제 도로 엣지 위로만 배치 가능합니다.</li>
+          </ul>
+        </li>
+
+        <li style="margin-bottom:10px;">
+          <strong>경로 및 이동 처리</strong>
+          <ul style="margin:6px 0 0 0; padding-left:1.1em;">
+            <li>세 알고리즘 경로를 모두 표시하고, 전체 혹은 개별 선택하여 비교 요약을 제공합니다.</li>
+            <li><b>경로 스냅</b> : Polyline을 도로망(OSMnx)에 정렬.</li>
+            <li><b>메트릭</b> : 거리(m·km), 예상 시간을 표기합니다.</li>
+          </ul>
+        </li>
+
+        <li style="margin-bottom:10px;">
+          <strong>지도 스타일 전환</strong>
+          <ul style="margin:6px 0 0 0; padding-left:1.1em;">
+            <li>오른쪽 상단 3가지 버튼 : 일반지도 / 위성지도 / 지형지도.</li>
+            <li>클릭 시 지도 스타일이 전환됩니다.</li>
+          </ul>
+        </li>
+
+        <li style="margin-bottom:10px;">
+          <strong>기술적 특징</strong>
+          <ul style="margin:6px 0 0 0; padding-left:1.1em;">
+            <li>Leaflet.js + Routing Machine 기반 UI.</li>
+            <li>도로망 데이터 : OSMnx.</li>
+            <li>사이드바 이벤트는 지도 이벤트와 충돌하지 않도록 차단.</li>
+          </ul>
+        </li>
+
+        <li>
+          <section class="algo-section">
+            <h4 style="margin:0 0 6px 0;">지원 알고리즘</h4>
+            <table class="algo-table">
+              <thead>
+                <tr>
+                  <th style="width:140px;">알고리즘</th>
+                  <th>특징</th>
+                  <th style="width:140px;">경로 색상</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><b>D* Lite</b></td>
+                  <td>동적 환경에서 변경 구간만 증분 탐색. 방해요소 추가/제거 시 빠른 우회 경로.</td>
+                  <td>
+                    <span class="algo-chip" style="background:#ef4444;"></span>
+                    <span class="algo-chip-label">빨간색</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td><b>CCH + A*</b></td>
+                  <td>CCH로 대규모 그래프에서 빠른 경로 + A* 휴리스틱. 기준/안정성 우수.</td>
+                  <td>
+                    <span class="algo-chip" style="background:#3b82f6;"></span>
+                    <span class="algo-chip-label">파란색</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td><b>RTAA*</b></td>
+                  <td>영역 국소 탐색·휴리스틱 갱신으로 실시간 반응. 시뮬레이션 적용 용이.</td>
+                  <td>
+                    <span class="algo-chip" style="background:#10b981;"></span>
+                    <span class="algo-chip-label">초록색</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <br><br><br><br><br><br><br><br>
+
+  <!-- 섹션 2: 이미지 | 설명 -->
+  <section class="section">
+    <div class="image-card">
+      <img src="/static/img/실시간경로탐색.png" alt="실시간 경로 탐색 시연 이미지">
+    </div>
+    <div class="text-card" id="live-routing-notes">
+      <div class="title">실시간 경로 탐색</div>
+
+      <ol style="margin:0; padding-left:1.1em; line-height:1.55;">
+        <li style="margin-bottom:10px;">
+          <strong>경로 탐색 및 표시</strong>
+          <ul style="margin:6px 0 0 0; padding-left:1.1em;">
+            <li>고정된 출발지와 도착지를 입력하면 서버에서 경로를 불러와 지도에 표시합니다.</li>
+            <li>경로는 OSMnx 기반 도로망을 사용해 계산되며, 최적 경로 알고리즘인 D* Lite로 실시간 재탐색을 수행합니다. 실시간으로 방해요소를 마주치면 경로를 우회합니다.</li>
+            <li>탐색된 경로는 <b style="color:#dc2626;">빨간 선</b>으로, 지나간 경로는 <b style="color:#16a34a;">초록색 선</b>으로 시각화됩니다.</li>
+          </ul>
+        </li>
+
+        <li style="margin-bottom:10px;">
+          <strong>사이드바</strong>
+          <ul style="margin:6px 0 0 0; padding-left:1.1em;">
+            <li><b>출발지/도착지 입력 </b>: 주소는 지정 되어 있고 버튼을 눌러 경로 탐색을 합니다.</li>
+            <li><b>경로 요약 카드 </b>: 전체 거리 / 소요 시간, 남은 거리 / 예상 도착 시간을 제공합니다.</li>
+            <li><b>좌표 표시 </b>: 출발지·도착지의 MGRS 좌표를 제공합니다.</li>
+            <li><b>위험 경고창 </b>: 방해요소 감지하면 "🚨 위험 요소를 감지했습니다. ⚠️ 우회 경로로 재안내합니다" 재안내 메시지가 표시됩니다.</li>
+            <li><b>드론 영상 패널 </b>: <b>YOLO</b>가 방해요소를 식별하면 해당 방해요소 상황을 실시간 영상으로 제공되고, 방해요소의 종류와 개수를 출력합니다.</li>
+          </ul>
+        </li>
+
+        <li style="margin-bottom:10px;">
+          <strong>위험 요소 감지 및 처리</strong>
+          <ul style="margin:6px 0 0 0; padding-left:1.1em;">
+            <li>경로 위에 방해요소인 산불, 도로붕괴, 전차, 폭발을 지정합니다.</li>
+            <li>트럭 아이콘(수송차량)이 방해요소 반경(500m)에 접근하면:
+              <ul style="margin:6px 0 0 0; padding-left:1.1em;">
+                <li>해당 방해요소에 대한 드론 영상 출력</li>
+                <li>경고 박스 표시</li>
+                <li>실시간으로 경로 재탐색 수행</li>
+              </ul>
+            </li>
+            <li>방해요소 주변에는 <b style="color:#b91c1c;">위험 반경</b>이 표시됩니다.</li>
+            <li>방해요소 아이콘 클릭 시 팝업으로 방해요소의 위경도/MGRS 좌표/YOLO로 탐지한 방해요소 개수 및 종류를 제공합니다.</li>
+          </ul>
+        </li>
+
+        <li style="margin-bottom:10px;">
+          <strong>실시간 차량 이동 애니메이션</strong>
+          <ul style="margin:6px 0 0 0; padding-left:1.1em;">
+            <li>트럭 아이콘이 경로를 따라 주행하면서 누적 거리, 남은 거리, 예상 시간을 업데이트 합니다.</li>
+          </ul>
+        </li>
+
+        <li style="margin-bottom:10px;">
+          <strong>지도 스타일 전환</strong>
+          <ul style="margin:6px 0 0 0; padding-left:1.1em;">
+            <li>오른쪽 상단 3가지 버튼 : 일반지도 / 위성지도 / 지형지도.</li>
+            <li>클릭 시 지도 스타일이 전환됩니다.</li>
+          </ul>
+        </li>
+
+        <li>
+          <strong>기술적 특징</strong>
+          <ul style="margin:6px 0 0 0; padding-left:1.1em;">
+            <li>OSMnx 도로망 데이터 로드.</li>
+            <li>MGRS 좌표 변환 지원(군사용 좌표계).</li>
+            <li>사이드바 토글 버튼으로 지도 최대화/최소화.</li>
+          </ul>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+</div>
+{% endblock %}

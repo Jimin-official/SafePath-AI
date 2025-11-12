@@ -1,0 +1,1059 @@
+{% extends "base.html" %}  
+
+{% block title %}실시간 경로 탐색 (Leaflet){% endblock %}
+
+{% block head_extra %}
+  {{ super() }}
+  {% include "coach_map.html" %}
+<!-- Leaflet CSS/JS (정적 로드) -->
+<link rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous">
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
+
+<!-- MGRS -->
+<script src="https://cdn.jsdelivr.net/npm/mgrs/dist/mgrs.min.js"></script>
+<style>
+/* 모든 글자 폰트 통일 */
+.map-yolo-sidebar,
+.map-yolo-sidebar * {
+  font-family: "Google Sans", Roboto, "Noto Sans KR", Arial, sans-serif !important;
+  font-size: 0.875rem !important;
+  line-height:1.25rem !important;
+  letter-spacing: 0.00625rem !important;
+  color: #333;
+}
+.map-section .map-style-switcher,
+.map-section .map-style-switcher * {
+  font-family: "Google Sans", Roboto, "Noto Sans KR", Arial, sans-serif !important;
+  font-size: 0.875rem !important;
+  line-height:1.25rem !important;
+  letter-spacing: 0.00625rem !important;
+  color: #333;
+}
+#map .map-style-switcher {
+  position: absolute;
+  top: 110px;     /* 헤더가 fixed라면 64~110px 사이로 조절 */
+  /* right: 16px; */
+  z-index: 3000;
+  pointer-events: auto;
+}
+#map{
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;  /* ← 100vw/100vh 대신 네 변 고정 */
+  z-index: 0;
+}
+.map-yolo-container{ display:flex; position:relative; width:100vw; height:100vh; }
+.map-yolo-sidebar {
+  position: fixed;
+  padding: 1.2rem 1.5rem;
+  left: 0;
+  width: 400px;
+  top: 110px; bottom: 0;
+  background: #fff;
+  border-radius: 0;
+  overflow: visible;
+  z-index: 3000;
+  transform: translateX(0);
+  transition: transform .28s ease;
+}
+.map-yolo-sidebar.sidebar-closed { transform: translateX(calc(-100% + 14px)); }
+.sidebar-body { height: 100%; padding: 1.2rem 1.5rem; overflow-y: auto; overflow-x: hidden; }
+.map-section{ flex:1; position:relative; z-index:0; }
+
+.sidebar-toggle-btn {
+  position: absolute;
+  top: 50%;
+  right: -28px;
+  transform: translateY(-50%);
+  width: 28px; height: 84px;
+  display: grid; place-items: center;
+  border: 1px solid rgba(0,0,0,.12);
+  border-left: none;
+  background: #fff;
+  color: #333;
+  font-weight: 700; line-height: 1;
+  border-radius: 0 8px 8px 0;
+  cursor: pointer;
+  user-select: none;
+  z-index: 5000;
+}
+.sidebar-toggle-btn:hover { filter: brightness(0.98); }
+
+.btn-primary{ background-color: #007bff; color: white; border: 1px solid #007bff; padding: 8px 16px; border-radius: 6px; font-size: 14px; cursor: pointer; }
+.btn-primary:hover{ background:#0056b3; }
+
+.naver-input-box{ position:relative; border:1px solid #ccc; border-radius:8px; overflow:hidden; width:100%; max-width:390px; background:#fff; font-size:14px; box-sizing:border-box; }
+.naver-input-box input{ width:100%; border:none; padding:12px 40px 12px 12px; font-size:14px; background:transparent; outline:none; display:block; box-sizing:border-box; }
+.naver-input-box input:first-child{ border-bottom:1px solid #eee; }
+.naver-input-box .swap-btn{ position:absolute; top:50%; right:8px; transform:translateY(-50%); width:28px; height:28px; border:1px solid #ccc; border-radius:50%; background:#fff; font-size:14px; display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,.1); z-index:10; }
+
+#info,#coordsInfo,#utmInfo{ position:static; margin-top:.5rem; padding:8px 12px; border-radius:8px; font-size:14px; color:#333; background:#ffffff; border:1px solid #eee; }
+#info{ font-weight:600; }
+#warningBox{ text-align:center; background:#ffe5e5; color:#cc0000; border:1px solid #cc0000; font-weight:700; display:none; }
+.note{ font-size:14px; color:#333; }
+.note.note-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.route-info-box{ all:unset; display:block; margin-top:.5rem; }
+.route-info-box:empty{ display:none; }
+
+.map-style-switcher{ position:absolute; top:-3px; right:20px; z-index:3000; background:transparent; border-radius:12px; padding:4px; display:flex; gap:6px; }
+.style-btn{ cursor:pointer; text-align:center; padding:6px; border-radius:8px; background:#fff; border:1px solid #ccc; font-size:12px; display:flex; flex-direction:column; align-items:center; width:70px; box-shadow:0 1px 4px rgba(0,0,0,.15); color:#000; }
+.style-btn img{ width:50px; height:50px; object-fit:cover; border-radius:4px; }
+.style-btn.active{ border:2px solid #1a73e8; color:#1a73e8; }
+
+.droneBox{ margin-top:1rem; position:relative; }
+.droneVideo{ width: 100%; height: 240px; object-fit: cover; border-radius: 8px; display: block; }
+.videoLabel{
+  position:absolute; left:0; right:0; bottom:0;
+  width:100% !important; margin:0 !important;
+  background:rgba(0,0,0,.7); color:#fff; font-weight:bold;
+  padding:6px; font-size:14px; text-align:center;
+  border-radius:0 0 10px 10px; box-sizing:border-box; z-index:5; pointer-events:none;
+}
+
+/* 요약 카드 */
+.summary-card{
+  background:#fff; border:1px solid #e5e7eb; border-radius:12px;
+  padding:12px 14px; margin-top:.75rem; box-shadow:0 2px 8px rgba(0,0,0,.04); max-width:390px
+}
+.summary-card .summary-title{ font-weight:700; font-size:14px; color:#374151; margin-bottom:6px; }
+#summaryText{ font-size:14px; color:#111827; line-height:1.5; white-space: normal; }
+
+#totalInfo, #info{ display:none !important; }
+
+/* Leaflet 기본 팝업 그림자 제거 + 라이트한 보더만 */
+.leaflet-popup-content-wrapper {
+  box-shadow: none !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 10px !important;
+}
+.leaflet-popup-tip {
+  box-shadow: none !important;
+  background: #fff !important;
+}
+.hazard-popup .leaflet-popup-content-wrapper,
+.hazard-popup .leaflet-popup-tip {
+  box-shadow: none !important;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="map-yolo-container">
+  <aside id="sidebar" class="map-yolo-sidebar">
+    <div id="sidebarToggle" class="sidebar-toggle-btn">◀</div>
+    <div class="sidebar-top">
+      <br>
+      <div class="naver-input-box">
+        <input type="text" id="start" value="서울시 마포구 월드컵로 77 망원역" placeholder="출발지 입력" autocomplete="off" readonly />
+        <input type="text" id="end"   value="서울시 은평구 연서로 137-1 구산역"   placeholder="도착지 입력" autocomplete="off" readonly />
+        <button type="button" class="swap-btn" aria-label="출발⇄도착">⇅</button>
+      </div>
+
+      <br>
+      <div class="note note-row">
+        <span>※주소 직접 입력 불가※</span>
+        <button id="routeBtn" class="btn-primary">길찾기 ></button>
+      </div>
+
+      <div id="summaryBox" class="summary-card">
+        <div class="summary-title">경로 요약</div>
+        <div id="summaryText">-</div>
+      </div>
+
+      <div id="totalInfo" class="route-info-box"></div>
+      <div id="coordsInfo" class="route-info-box"></div>
+      <div id="utmInfo" class="route-info-box"></div>
+      <div id="info" class="route-info-box" style="margin-top:1rem;"></div>
+
+      <div class="sidebar-bottom">
+        {% for type, label, file in [('fire','산불 감지','video/fire.mp4'),
+                                    ('road_collapse','도로붕괴 감지','video/road_collapse.mp4'),
+                                    ('tanks','전차 감지','video/tanks.mp4'),
+                                    ('explosion','폭발 감지','video/explosion.mp4')] %}
+        <div id="droneBox{{ type }}" class="droneBox" style="display:none;">
+          <video id="droneVideo{{ type }}" class="droneVideo" controls muted loop autoplay playsinline>
+            <source src="{{ url_for('static', filename=file) }}" type="video/mp4">
+            브라우저가 비디오 태그를 지원하지 않습니다.
+          </video>
+          <div class="videoLabel">📹 실시간 드론 영상 ({{ label }})</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div id="warningBox" class="route-info-box warning" style="display:none;">
+      🚨 위험 요소를 감지했습니다. <br> ⚠️우회 경로로 재안내합니다
+    </div>
+  </aside>
+
+  <div class="map-section">
+    <div id="map">
+      <div class="map-style-switcher">
+        <div class="style-btn" data-style="osm">
+          <img src="{{ url_for('static', filename='img/일반.png') }}"><div>일반지도</div>
+        </div>
+        <div class="style-btn" data-style="satellite">
+          <img src="{{ url_for('static', filename='img/위성.png') }}"><div>위성지도</div>
+        </div>
+        <div class="style-btn" data-style="topo">
+          <img src="{{ url_for('static', filename='img/지형.png') }}"><div>지형지도</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+if (!window.L) { alert("Leaflet 로드 실패. 네트워크/차단 여부 확인"); throw new Error("Leaflet not loaded"); }
+
+// ==============================
+//  Leaflet 초기화 + 베이스 레이어
+// ==============================
+const START_CENTER = [37.5819, 126.9247];
+let map, currentBase;
+const layerOSM = L.tileLayer(
+  "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+  { attribution: '&copy; OpenStreetMap contributors' }
+);
+const layerSat = L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  { attribution: "Tiles &copy; Esri" }
+);
+const layerTopo = L.tileLayer(
+  "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+  { attribution: "Map data: &copy; OpenStreetMap, SRTM | Tiles: &copy; OpenTopoMap" }
+);
+
+map = L.map("map", { center: START_CENTER, zoom: 13, zoomControl: true, layers: [layerOSM] });
+currentBase = layerOSM;
+document.querySelector('.style-btn[data-style="osm"]')?.classList.add('active');
+
+map.on('moveend zoomend', () => {
+  if (openedHazardOrder.length) layoutOpenHazardPopups();
+});
+
+document.querySelectorAll(".style-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".style-btn").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    if (currentBase) map.removeLayer(currentBase);
+    const style = btn.dataset.style;
+    if (style === "satellite") currentBase = layerSat;
+    else if (style === "topo") currentBase = layerTopo;
+    else currentBase = layerOSM;
+    currentBase.addTo(map);
+    setTimeout(()=>map.invalidateSize(), 100);
+  });
+});
+
+// ==============================
+//  그래프(노드/엣지) 불러오기
+// ==============================
+let allMapEdges = [];     // Leaflet Polyline 객체 (투명)
+let graphNodes = {};      // { id: {lat, lng} }
+(async function loadGraphGeoJSON(){
+  try {
+    const resEdges = await fetch('{{ url_for("static", filename="converted_edges.geojson") }}');
+    const gjEdges = await resEdges.json();
+    function addEdgeFeature(f){
+      if (!f.geometry) return;
+      const g=f.geometry;
+      const style = { color:'#808080', weight:2, opacity:0}; // 보이지 않게
+      if (g.type==='LineString'){
+        const latlngs = g.coordinates.map(([lon, lat]) => [lat, lon]);
+        const pl = L.polyline(latlngs, style).addTo(map);
+        allMapEdges.push(pl);
+      } else if (g.type==='MultiLineString'){
+        g.coordinates.forEach(line=>{
+          const latlngs = line.map(([lon, lat]) => [lat, lon]);
+          const pl = L.polyline(latlngs, style).addTo(map);
+          allMapEdges.push(pl);
+        });
+      }
+    }
+    if (gjEdges.type==='FeatureCollection') gjEdges.features.forEach(addEdgeFeature);
+    else addEdgeFeature(gjEdges);
+  } catch(e){ console.error('edges geojson load error', e); }
+
+  try {
+    const resNodes = await fetch('{{ url_for("static", filename="converted_nodes.geojson") }}');
+    const gjNodes = await resNodes.json();
+    function addNodeFeature(f){
+      if (!f.geometry || f.geometry.type!=='Point') return;
+      const [lon, lat] = f.geometry.coordinates;
+      const id = f.properties?.osmid ?? f.properties?.id ?? f.id;
+      if (id!=null) graphNodes[id] = { lat, lng: lon };
+    }
+    if (gjNodes.type==='FeatureCollection') gjNodes.features.forEach(addNodeFeature);
+    else addNodeFeature(gjNodes);
+  } catch(e){ console.error('nodes geojson load error', e); }
+})();
+
+// ==============================
+//  공통 유틸/상태
+// ==============================
+const ACTIVATE_RADIUS = 600;
+const NEAR_RADIUS     = 220;
+const DETECT_VISUAL  = 800;
+const ALERT_RADIUS    = 750;
+const SPEED_MPS       = 40 * 1000 / 3600;
+
+let marker, routePolyline=null, traversedPolyline=null, animIndex=0, animTimer=null;
+let startPointMarker, endPointMarker;
+let routeCoords = [];
+let traversedCoords = [];
+let traversedMeters = 0;
+let isReplanning = false;
+
+let yoloDetectionsPerHazard = [{}, {}, {}, {}];
+
+const obstacleTypes = [
+  { icon:'🔥', label:'Fire',         radius:200, type:'fire' },
+  { icon:'🕳️', label:'Road_collapse', radius: 30, type:'road_collapse' },
+  { icon:'🛡️', label:'Tanks',         radius:150, type:'tanks' },
+  { icon:'💥', label:'Explosion',     radius:100, type:'explosion' }
+];
+const hazardImages = {
+  fire: "{{ url_for('static', filename='img/hazard_fire.jpg') }}",
+  road_collapse: "{{ url_for('static', filename='img/hazard_road.jpg') }}",
+  tanks: "{{ url_for('static', filename='img/hazard_tanks.jpg') }}",
+  explosion: "{{ url_for('static', filename='img/hazard_explosion.jpg') }}"
+};
+
+let hazardInfoPopups = [];
+let openInfoIndex = null;
+
+let avoidCenters = [null, null, null, null];
+let hazardActive = [false,false,false,false];
+let avoidMarkers = [];
+let avoidCircles = [];
+let alertShownPerType = { fire:false, tanks:false, road_collapse:false, explosion:false };
+let currentVideoType = null;
+
+// 이미 열린 팝업 집합(중복 방지) + 열린 순서(번갈아 측면 결정) + 각 장애물의 측면 기록
+const openedHazardPopupIdx = new Set();
+const openedHazardOrder    = []; 
+const popupSideByIdx       = new Map();
+
+// 팝업 배치 간격/오프셋(아래쪽으로 더 내렸다)
+const POPUP_X_RIGHT = 250;
+const POPUP_X_LEFT  = -250;
+const POPUP_Y_BASE  = 60;  
+const POPUP_Y_STEP  = 44;
+
+const popupLeaderByIdx = new Map();  // idx -> L.Polyline
+
+// 레이아웃 디바운스
+let _layoutTimer = null;
+let _layoutDirty = false;
+
+// 좌표 배열→경계
+function boundsOfPath(coords){
+  const b = L.latLngBounds();
+  coords.forEach(([lat,lon]) => b.extend([lat,lon]));
+  return b;
+}
+function haversine(lat1,lon1,lat2,lon2){
+  const R=6371000, dLat=(lat2-lat1)*Math.PI/180, dLon=(lon2-lon1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+async function getNodeId(lat, lon){
+  const r=await fetch(`/get_node_id?lat=${lat}&lon=${lon}`);
+  if(!r.ok) throw new Error('get_node_id 실패');
+  const j=await r.json(); return j.node_id;
+}
+
+const MGRS_PRECISION = 5;
+function prettyMGRS(s){
+  const m = s.match(/^(\d{1,2})([C-X])([A-Z]{2})(\d*)$/i);
+  if(!m) return s;
+  const [,z,b,sq,d] = m; if(!d) return `${z}${b} ${sq}`;
+  const h = d.length/2;
+  return `${z}${b} ${sq} ${d.slice(0,h)} ${d.slice(h)}`;
+}
+
+let geocodeInProgress=false;
+async function geocodekakao(addr){
+  if(geocodeInProgress) return null; geocodeInProgress=true;
+  try{
+    const r=await fetch('/api/geocode?q='+encodeURIComponent(addr));
+    if(!r.ok) throw new Error(r.statusText);
+    const j=await r.json();
+    if(j.documents && j.documents.length>0) return [parseFloat(j.documents[0].y), parseFloat(j.documents[0].x)];
+  }catch(e){ console.error(e); }
+  finally{ geocodeInProgress=false; }
+  return null;
+}
+
+// ==============================
+//  위험 팝업/마커/원
+// ==============================
+function buildHazardPopupHTML(idx){
+  const c = avoidCenters[idx];
+  if(!c) return '<div style="padding:8px">좌표 없음</div>';
+
+  const t   = obstacleTypes[idx];
+  const img = (typeof hazardImages !== 'undefined' && hazardImages[t.type])
+              ? hazardImages[t.type]
+              : "{{ url_for('static', filename='img/hazard_default.jpg') }}";
+
+  const code = prettyMGRS(mgrs.forward([c[1], c[0]], MGRS_PRECISION));
+
+  // YOLO 탐지 결과 블록
+  const detections = yoloDetectionsPerHazard[idx] || {};
+  const detectedItems = [];
+  for (const [key, value] of Object.entries(detections)) {
+    if (key !== 'error' && value > 0) detectedItems.push(`<strong>${key}:</strong> ${value}개`);
+  }
+  const detectionHTML = detectedItems.length
+    ? `<div style="margin-top:8px; padding:8px; background:#f0f9ff; border:1px solid #e0f2fe; border-radius:8px; font-size:12px;">
+         <div style="font-weight:700; color:#0c4a6e; margin-bottom:4px;">YOLO 탐지 결과</div>
+         ${detectedItems.join('<br>')}
+       </div>`
+    : '';
+
+  return `
+    <div style="width:200px; font-family: sans-serif; color: #333;">
+      <div style="font-weight:700; font-size: 14px; margin-bottom:8px;">${t.label}</div>
+      <img src="${img}" alt="${t.label}" style="width:100%; height:auto; border-radius:8px; display:block;" />
+      ${detectionHTML}
+      <div style="margin-top:8px; font-size:12px; color:#222; background:#f9f9f9; padding:8px; border-radius:8px;">
+        <strong>MGRS:</strong> ${code}<br>
+        <span style="color:#666;">(lat, lon: ${c[0].toFixed(5)}, ${c[1].toFixed(5)})</span>
+      </div>
+    </div>`;
+}
+
+function attachMarkerPopup(idx, marker){
+  const popup = L.popup({
+    className: 'hazard-popup',     // ← CSS로 추가 조정 가능
+    maxWidth: 200,                 // ← 260 → 200
+    closeButton: true,
+    keepInView: true,
+    autoPan: true,
+    autoClose: false,
+    closeOnClick: false,
+    offset: [140, -16],            // ← 살짝 줄여서 균형 맞춤
+    autoPanPaddingTopLeft: [(document.getElementById('sidebar')?.offsetWidth || 0) + 20, 72],
+    autoPanPaddingBottomRight: [20, 20]
+  });
+
+  marker.off('click');
+  marker.on('click', (e)=>{
+    popup.options.autoPanPaddingTopLeft = [(document.getElementById('sidebar')?.offsetWidth || 0) + 20, 72];
+    // 전역 팝업 금지 → 마커에 바인딩하고 그 팝업만 열기 (장애물당 1개 보장)
+    marker.bindPopup(popup.setContent(buildHazardPopupHTML(idx)));
+    marker.openPopup();
+  });
+}
+
+map.on('click', ()=>{ map.closePopup(); openInfoIndex = null; });
+
+function showHazard(i, visible){
+  if(avoidMarkers[i]) visible ? avoidMarkers[i].addTo(map) : map.removeLayer(avoidMarkers[i]);
+  if(avoidCircles[i]) visible ? avoidCircles[i].addTo(map) : map.removeLayer(avoidCircles[i]);
+}
+
+function updateHazardVisibility(nearestIdx, nearestD){
+  avoidCenters.forEach((_,i)=>{
+    if(hazardActive[i]) showHazard(i,true);
+    else showHazard(i, i===nearestIdx && nearestD<DETECT_VISUAL);
+  });
+}
+
+// 여러 팝업을 동시에 유지하면서 겹치지 않게 '좌/우 번갈아' 재배치
+function layoutOpenHazardPopups() {
+  const sidebarW = (document.getElementById('sidebar')?.offsetWidth || 0);
+
+  openedHazardOrder.forEach((idx, rank) => {
+    const center = avoidCenters[idx];
+    const marker = avoidMarkers[idx];
+    if (!center || !marker) return;
+
+    const ll = L.latLng(center[0], center[1]);
+    if (!map.hasLayer(marker)) marker.addTo(map);
+    marker.setLatLng(ll);
+
+    // 발견 순서로 좌/우 고정
+    const side    = popupSideByIdx.get(idx) || 'right';
+    const xOffset = (side === 'right') ? POPUP_X_RIGHT : POPUP_X_LEFT;
+    const yOffset = POPUP_Y_BASE + (rank * POPUP_Y_STEP);
+
+    // 팝업 갱신(깜빡임 없이)
+    let pop = marker.getPopup();
+    const opts = {
+      className: 'hazard-popup',
+      maxWidth: 220,
+      autoPan: false,
+      keepInView: true,
+      autoClose: false,
+      closeOnClick: false,
+      offset: [xOffset, yOffset],
+      autoPanPaddingTopLeft: [sidebarW + 20, 72],
+      autoPanPaddingBottomRight: [20, 20],
+    };
+
+    if (!pop) {
+      marker.bindPopup(buildHazardPopupHTML(idx), opts);
+      marker.openPopup();
+    } else {
+      pop.setContent(buildHazardPopupHTML(idx));
+      Object.assign(pop.options, opts);
+      pop.update();
+      if (!pop.isOpen && marker.openPopup) marker.openPopup();
+    }
+
+    // ====== 팝업 ↔ 마커 리더 라인 ======
+    const basePt = map.latLngToContainerPoint(ll);
+    const tgtPt  = L.point(
+      basePt.x + (side === 'right' ? POPUP_X_RIGHT - 36 : POPUP_X_LEFT + 36),
+      basePt.y + (POPUP_Y_BASE + rank * POPUP_Y_STEP) - 8
+    );
+    const tgtLL  = map.containerPointToLatLng(tgtPt);
+
+    let line = popupLeaderByIdx.get(idx);
+    if (!line) {
+      line = L.polyline([ll, tgtLL], {
+        color: '#6C6C6C',
+        weight: 3,
+        opacity: 0.85,
+        dashArray: '4,4',
+        interactive: false
+      }).addTo(map);
+      popupLeaderByIdx.set(idx, line);
+    } else {
+      line.setLatLngs([ll, tgtLL]);
+      if (!map.hasLayer(line)) line.addTo(map);
+    }
+  }); 
+}   
+
+// 경고가 뜨면 해당 장애물 팝업을 누적 오픈
+function openAndAccumulateHazardPopup(idx) {
+  if (idx == null || !avoidCenters[idx] || !avoidMarkers[idx]) return;
+
+  // 처음 등장한 장애물이면: 순서 배열에 push + 측면 결정(번갈아)
+  if (!openedHazardPopupIdx.has(idx)) {
+    openedHazardPopupIdx.add(idx);
+    openedHazardOrder.push(idx);
+
+    const side = (openedHazardOrder.length % 2 === 1) ? 'right' : 'left';
+    // 1번째(길찾기 중 첫 경고)는 right, 2번째는 left, 3번째는 right …
+    popupSideByIdx.set(idx, side);
+  }
+
+  // 레이아웃 갱신
+  layoutOpenHazardPopups();
+}
+
+// YOLO 탐지 결과를 경고박스에 반영
+function updateWarningBoxWithDetections(hazardType, detections) {
+  const warningEl = document.getElementById('warningBox');
+  if (!warningEl) return;
+
+  const items = [];
+  for (const [k, v] of Object.entries(detections || {})) {
+    if (k !== 'error' && v > 0) items.push(`${k}: ${v}개`);
+  }
+  const tail = items.length ? ` (${items.join(', ')})` : '';
+  warningEl.innerHTML = `🚨 위험 요소를 감지했습니다.${tail} <br> ⚠️우회 경로로 재안내합니다`;
+  warningEl.style.display = 'block';
+}
+
+function placeObstaclesAlongRoute(){
+  if(!routeCoords.length) return;
+  const cum=[0];
+  for(let i=1;i<routeCoords.length;i++){
+    cum[i]=cum[i-1]+haversine(routeCoords[i-1][0],routeCoords[i-1][1], routeCoords[i][0],routeCoords[i][1]);
+  }
+  const total=cum[cum.length-1]||1;
+  const fractions=[0.15,0.40,0.65,0.85];
+  const picks=fractions.map(f=>{ const target=f*total; let j=0; while(j<cum.length && cum[j]<target) j++; return routeCoords[Math.min(j,routeCoords.length-1)]; });
+  picks.forEach((p,i)=>{ avoidCenters[i]=p; if(!hazardActive[i]) hazardActive[i]=false; });
+
+  avoidCenters.forEach((center,idx)=>{
+    if(!center) return;
+    const {icon,label,radius}=obstacleTypes[idx];
+    const pos = L.latLng(center[0], center[1]);
+
+    if(!avoidMarkers[idx]){
+      const m = L.marker(pos, {
+        icon: L.divIcon({ html:`<div style="font-size:24px; transform:translate(-50%,-50%)">${icon}</div>`, className:'', iconSize:[24,24] })
+      });
+      avoidMarkers[idx]=m;
+      attachMarkerPopup(idx, m);
+      // 기본 비활성: 지도에 추가하지 않음
+    } else {
+      avoidMarkers[idx].setLatLng(pos);
+    }
+
+    if(!avoidCircles[idx]){
+      const c = L.circle(pos, { radius: radius, color:'#ff0000', weight:2, opacity:1, fillColor:'#ff0000', fillOpacity:0.15 });
+      avoidCircles[idx]=c;
+      // 기본 비활성
+    } else {
+      avoidCircles[idx].setLatLng(pos);
+    }
+  });
+}
+
+// ==============================
+//  경로, 이동, 재탐색
+// ==============================
+function drawRoute(route){
+  if(routePolyline) { map.removeLayer(routePolyline); routePolyline=null; }
+  routePolyline = L.polyline(route, { color:'#ff0000', weight:4, opacity:0.9 }).addTo(map);
+  if(!traversedPolyline){
+    traversedPolyline = L.polyline([], { color:'#00aa00', weight:5, opacity:0.9 }).addTo(map);
+  } else {
+    traversedPolyline.setLatLngs([]);
+  }
+  map.fitBounds(routePolyline.getBounds(), { padding:[20,20] });
+}
+
+function remainingDistanceMeters(fromIdx = animIndex) {
+  if (!routeCoords.length) return 0;
+  let m = 0;
+  const s = Math.max(1, fromIdx + 1);
+  for (let i = s; i < routeCoords.length; i++) {
+    m += haversine(
+      routeCoords[i-1][0], routeCoords[i-1][1],
+      routeCoords[i][0],   routeCoords[i][1]
+    );
+  }
+  return m;
+}
+
+function updateTotalInfo() {
+  const remainM = remainingDistanceMeters(animIndex);
+  const totalM  = traversedMeters + remainM;
+  const totalMin = Math.max(0, Math.round((totalM / SPEED_MPS) / 60));
+  const etaMin   = Math.max(0, Math.round((remainM / SPEED_MPS) / 60));
+  const sumEl = document.getElementById("summaryText");
+  if (sumEl) {
+    sumEl.innerHTML = `전체 경로: ${(totalM/1000).toFixed(2)} km / 약 ${totalMin} 분<br>남은 거리: ${(remainM/1000).toFixed(2)} km, 예상 시간: ${etaMin} 분`;
+  }
+}
+function refreshInfo(){ updateTotalInfo(); }
+
+function switchDroneVideo(typeOrNull){
+  if(typeOrNull === currentVideoType) return;
+  ['fire','tanks','road_collapse','explosion'].forEach(t=>{
+    const box=document.getElementById('droneBox'+t); if(!box) return;
+    box.style.display='none'; const v=box.querySelector('video'); v.pause(); v.currentTime=0;
+  });
+  currentVideoType = null;
+  if(typeOrNull){
+    const box=document.getElementById('droneBox'+typeOrNull);
+    if(box){ box.style.display='block'; box.querySelector('video').play(); currentVideoType = typeOrNull; }
+  }
+}
+
+async function replanFromCurrent(focusIdx){
+  try{
+    isReplanning = true;
+    if(animTimer){ clearInterval(animTimer); animTimer=null; }
+
+    const cur = marker ? marker.getLatLng()
+                       : L.latLng(routeCoords[0][0], routeCoords[0][1]);
+    const end = endPointMarker ? endPointMarker.getLatLng()
+                               : L.latLng(routeCoords.at(-1)[0], routeCoords.at(-1)[1]);
+
+    const sId = await getNodeId(cur.lat, cur.lng);
+    const gId = await getNodeId(end.lat, end.lng);
+
+    // [YOLO 연동] 활성화된 위험요소 타입으로 백엔드 탐지 요청
+    const hazardType = obstacleTypes[focusIdx].type;
+    let yoloResults = {};
+    try {
+      const yoloRes = await fetch('/api/detect_from_image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hazard_type: hazardType })
+      });
+
+      if (!yoloRes.ok) {
+        console.error('[YOLO] 탐지 API 호출 실패', yoloRes.status);
+      } else {
+        const ctype = yoloRes.headers.get('content-type') || '';
+        if (ctype.includes('application/json')) {
+          // ↓ 재선언 금지 (const 제거)
+          yoloResults = await yoloRes.json();
+          yoloDetectionsPerHazard[focusIdx] = yoloResults;
+          updateWarningBoxWithDetections(hazardType, yoloResults);
+        } else {
+          const text = await yoloRes.text();
+          console.error('[YOLO] JSON이 아님. 일부 내용:', text.slice(0,200));
+        }
+      }
+    } catch (e) {
+      console.error('[YOLO] 탐지 중 오류:', e);
+    }
+
+    async function requestPath(radius){
+      const payload = {
+        algorithms:["dlite"],
+        start_node_id:sId,
+        end_node_id:gId,
+        danger_coords: avoidCenters.map((c, i) => { // 이 부분이 바뀝니다
+          if (c && hazardActive[i]) {
+            return {
+              lat: c[0],
+              lon: c[1],
+              type: obstacleTypes[i].type // 장애물 종류(type) 추가
+            };
+          }
+          return null;
+        }).filter(Boolean),
+        danger_radius: radius,
+        blocked_edges:[]
+      };
+      const res = await fetch('/find_path', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+      if(!res.ok){ console.error('find_path 실패', res.status); return null; }
+      const data = await res.json();
+      const p = data?.paths?.dlite?.path || [];
+      return p.map(([lat,lon])=>[lat,lon]);
+    }
+
+    let tryRadius = NEAR_RADIUS;
+    let newRoute = null;
+    for(let attempt=0; attempt<3; attempt++){
+      newRoute = await requestPath(tryRadius);
+      if(!newRoute || !newRoute.length) break;
+      if(!pathHitsActiveHazard(newRoute, tryRadius)) break;
+      tryRadius = Math.round(tryRadius * 1.8);
+    }
+    if(!newRoute || !newRoute.length){
+      alert('재탐색 경로 없음');
+      startMarkerAnimation(cur);
+      return;
+    }
+
+    routeCoords = newRoute;
+    drawRoute(routeCoords);
+
+    // 기존 장애물 유지 & 재배치
+    const keepActiveCenters = avoidCenters.map((c,i)=> hazardActive[i] ? c : null);
+    placeObstaclesAlongRoute();
+    keepActiveCenters.forEach((c,i)=>{
+      if(c){
+        avoidCenters[i]=c; hazardActive[i]=true;
+        avoidMarkers[i]?.setLatLng([c[0],c[1]]);
+        avoidCircles[i]?.setLatLng([c[0],c[1]]);
+      }
+    });
+
+    updateTotalInfo();
+    showHazard(focusIdx,true);
+    startMarkerAnimation(cur);
+  }catch(e){
+    console.error(e);
+    alert('재탐색 중 오류');
+    startMarkerAnimation(marker ? marker.getLatLng() : null);
+  }finally{
+    isReplanning = false;
+  }
+}
+
+// const __orig_replanFromCurrent = replanFromCurrent;
+// replanFromCurrent = async function(focusIdx){
+//   // 활성화된 위험 타입 기반 YOLO 탐지
+//   const hazardType = obstacleTypes[focusIdx]?.type;
+//   if (hazardType){
+//     try{
+//       const yoloRes = await fetch('/api/detect_from_image', {
+//         method: 'POST',
+//         headers: {'Content-Type':'application/json'},
+//         body: JSON.stringify({ hazard_type: hazardType })
+//       });
+//       if (yoloRes.ok){
+//         const det = await yoloRes.json();
+//         yoloDetectionsPerHazard[focusIdx] = det;
+//         updateWarningBoxWithDetections(hazardType, det);
+//       }
+//     }catch(e){ console.warn('[YOLO] 호출 실패:', e); }
+//   }
+//   return __orig_replanFromCurrent.apply(this, arguments);
+// };
+/**
+ * @brief 새로 찾은 경로가 활성화된 위험 지역을 통과하는지 확인하는 함수
+ * @param {Array<[number, number]>} path - 확인할 경로 좌표 배열
+ * @param {number} radius - 위험 지역으로 판단할 반경 (미터)
+ * @returns {boolean} - 경로가 위험 지역을 통과하면 true, 아니면 false
+ */
+function pathHitsActiveHazard(path, radius) {
+  // 활성화된 모든 위험 지역에 대해 반복
+  for (let i = 0; i < hazardActive.length; i++) {
+    // i번째 위험 지역이 활성화(true) 상태이고, 중심 좌표가 있을 경우
+    if (hazardActive[i] && avoidCenters[i]) {
+      const center = avoidCenters[i]; // 위험 지역 중심 좌표 [lat, lon]
+
+      // 경로를 구성하는 모든 점에 대해 반복
+      for (const coord of path) {
+        // 경로의 한 점과 위험 지역 중심 사이의 거리를 계산
+        const distance = haversine(coord[0], coord[1], center[0], center[1]);
+        
+        // 거리가 주어진 반경보다 가까우면, 즉시 true를 반환하고 함수 종료
+        if (distance < radius) {
+          console.log(`경로가 ${i}번째 위험 지역을 통과합니다.`);
+          return true;
+        }
+      }
+    }
+  }
+  
+  // 모든 검사를 통과하면 위험 지역을 지나지 않는 것이므로 false 반환
+  return false;
+}
+function startMarkerAnimation(resumeAtLatLng=null){
+  if(!routeCoords.length) return;
+
+  if(!traversedPolyline){
+    traversedPolyline = L.polyline([], { color:'#00aa00', weight:5, opacity:0.9 }).addTo(map);
+  }
+
+  if(!marker){
+    marker = L.marker([routeCoords[0][0], routeCoords[0][1]], {
+      icon: L.icon({
+        iconUrl: "{{ url_for('static', filename='icons/military-truck2.png') }}",
+        iconSize: [80,80],
+        iconAnchor: [30,60]
+      })
+    }).addTo(map);
+  }
+
+  if(resumeAtLatLng){
+    const idx = nearestIndexOnRoute(resumeAtLatLng);
+    animIndex = Math.max(0, idx);
+    const here = L.latLng(routeCoords[animIndex][0], routeCoords[animIndex][1]);
+    marker.setLatLng(here);
+    traversedCoords.push([here.lat, here.lng]);
+    traversedPolyline.setLatLngs(traversedCoords);
+  }else{
+    animIndex = 0;
+    marker.setLatLng([routeCoords[0][0], routeCoords[0][1]]);
+    traversedCoords = [[routeCoords[0][0], routeCoords[0][1]]];
+    traversedPolyline.setLatLngs(traversedCoords);
+  }
+
+  refreshInfo();
+
+  if(animTimer){ clearInterval(animTimer); animTimer=null; }
+  animTimer = setInterval(async ()=>{
+    animIndex++;
+    if(animIndex >= routeCoords.length){
+      clearInterval(animTimer); animTimer=null;
+      switchDroneVideo(null);
+      document.getElementById('warningBox').style.display='none';
+      refreshInfo();
+      clearCurrentHazardMGRS();
+      return;
+    }
+    const current = L.latLng(routeCoords[animIndex][0], routeCoords[animIndex][1]);
+    marker.setLatLng(current);
+
+    traversedCoords.push([current.lat, current.lng]);
+    traversedPolyline.setLatLngs(traversedCoords);
+    routePolyline.setLatLngs(routeCoords.slice(animIndex));
+
+    // 방금 이동한 구간 누적
+    if (traversedCoords.length >= 2) {
+      const a = traversedCoords[traversedCoords.length - 2];
+      const b = traversedCoords[traversedCoords.length - 1];
+      traversedMeters += haversine(a[0], a[1], b[0], b[1]);
+    }
+    refreshInfo();
+
+    // 시야에 보이는 위험
+    let nearestIdx=-1, nearestD=Infinity;
+    avoidCenters.forEach((c,i)=>{
+      if(!c || hazardActive[i]) return;
+      const d = haversine(current.lat, current.lng, c[0], c[1]);
+      if(d<nearestD){ nearestD=d; nearestIdx=i; }
+    });
+    updateHazardVisibility(nearestIdx, nearestD);
+
+    if(nearestIdx>=0 && nearestD < DETECT_VISUAL) {
+      switchDroneVideo(obstacleTypes[nearestIdx].type);
+    } else {
+      let bestAct=-1, bestActD=Infinity;
+      avoidCenters.forEach((c,i)=>{ if(c && hazardActive[i]){ const d=haversine(current.lat,current.lng,c[0],c[1]); if(d<bestActD){ bestActD=d; bestAct=i; } } });
+      if(bestAct>=0 && bestActD<DETECT_VISUAL) switchDroneVideo(obstacleTypes[bestAct].type);
+      else switchDroneVideo(null);
+    }
+
+    // 경고 레이블/알림
+    let warnNearestD = Infinity, warnNearestType = null, warnNearestIdx = -1;
+    avoidCenters.forEach((c,i)=>{
+      if(!c) return;
+      const d = haversine(current.lat, current.lng, c[0], c[1]);
+      if(d < warnNearestD){ warnNearestD = d; warnNearestType = obstacleTypes[i].type; warnNearestIdx = i; }
+    });
+    if(isFinite(warnNearestD) && warnNearestD < ALERT_RADIUS){
+      document.getElementById('warningBox').style.display='block';
+      const label = obstacleTypes[warnNearestIdx].label;
+      if(!alertShownPerType[warnNearestType]){
+        alertShownPerType[warnNearestType] = true;
+        alert(`⚠️ 500m 앞에 위험 요소가 감지되었습니다. (${label})`);
+      }
+      // 경고가 뜬 직후, 해당 장애물 팝업을 자동으로 누적 오픈
+      openAndAccumulateHazardPopup(warnNearestIdx);
+    }else{
+      document.getElementById('warningBox').style.display='none';
+    }
+
+    // 현재 통과 중 위험지역 MGRS
+    let shown = false;
+    for (let i = 0; i < avoidCenters.length; i++) {
+      const c = avoidCenters[i]; if (!c) continue;
+      const d = haversine(current.lat, current.lng, c[0], c[1]);
+      const rad = obstacleTypes[i].radius || 0;
+      if (d <= rad) {
+        setCurrentHazardMGRS(c[0], c[1], obstacleTypes[i].label);
+        shown = true;
+        break;
+      }
+    }
+    if (!shown) clearCurrentHazardMGRS();
+
+    if(nearestIdx>=0 && nearestD < ACTIVATE_RADIUS && !hazardActive[nearestIdx] && !isReplanning){
+      hazardActive[nearestIdx]=true;
+      await replanFromCurrent(nearestIdx);
+      return;
+    }
+  }, 100);
+}
+
+function nearestIndexOnRoute(latlng){
+  let bestIdx=0, bestD=Infinity;
+  for (let i=0;i<routeCoords.length;i++){
+    const d=haversine(latlng.lat, latlng.lng, routeCoords[i][0], routeCoords[i][1]);
+    if(d<bestD){ bestD=d; bestIdx=i; }
+  }
+  return bestIdx;
+}
+
+function setCurrentHazardMGRS(lat, lon, label){
+  const el = document.getElementById('coordsInfo'); if(!el) return;
+  const code = prettyMGRS(mgrs.forward([lon, lat], MGRS_PRECISION));
+  el.innerHTML = `현재 위험지역 <b>${label}</b> MGRS: ${code}`;
+}
+function clearCurrentHazardMGRS(){
+  const el = document.getElementById('coordsInfo'); if(!el) return;
+  el.innerHTML = '';
+}
+
+// 출발/도착 마커 아이콘
+const START_ICON = L.icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+
+const END_ICON = L.icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+
+const startIcon = START_ICON;
+const endIcon   = END_ICON;
+
+// ==============================
+//  경로 찾기 버튼
+// ==============================
+document.getElementById("routeBtn").onclick = async function(){
+  const sTxt=document.getElementById("start").value.trim();
+  const eTxt=document.getElementById("end").value.trim();
+  if(!sTxt||!eTxt) return alert("출발지와 도착지를 입력해주세요.");
+
+  const start = await geocodekakao(sTxt);
+  const end   = await geocodekakao(eTxt);
+  if(!start || !end) return alert("주소를 찾을 수 없습니다.");
+
+  // 초기화
+  switchDroneVideo(null);
+  document.getElementById('warningBox').style.display='none';
+
+  if(startPointMarker){ map.removeLayer(startPointMarker); startPointMarker=null; }
+  if(endPointMarker){ map.removeLayer(endPointMarker); endPointMarker=null; }
+  if(routePolyline){ map.removeLayer(routePolyline); routePolyline=null; }
+  if(marker){ map.removeLayer(marker); marker=null; }
+  if(!traversedPolyline){
+    traversedPolyline = L.polyline([], { color:'#00aa00', weight:4, opacity:0.85 }).addTo(map);
+  } else {
+    traversedPolyline.setLatLngs([]);
+  }
+  traversedCoords = [];
+  traversedMeters = 0;
+  hazardActive=[false,false,false,false];
+  alertShownPerType = { fire:false, tanks:false, road_collapse:false, explosion:false };
+
+  // 마커
+  startPointMarker = L.marker(start, { icon: startIcon }).addTo(map);
+  endPointMarker   = L.marker(end,   { icon: endIcon   }).addTo(map);
+
+  // MGRS 표기
+  const sM=mgrs.forward([start[1],start[0]],MGRS_PRECISION);
+  const eM=mgrs.forward([end[1],end[0]],MGRS_PRECISION);
+  document.getElementById("utmInfo").innerHTML = `<b>출발지 MGRS 좌표 :</b> ${prettyMGRS(sM)}<br><b>도착지 MGRS 좌표 :</b> ${prettyMGRS(eM)}`;
+
+  // 서버에서 경로 GeoJSON 수신
+  const url=`/route_geojson?start_lat=${start[0]}&start_lon=${start[1]}&goal_lat=${end[0]}&goal_lon=${end[1]}`;
+  const r=await fetch(url);
+  if(!r.ok) return alert("서버에서 경로를 받아오는데 실패했습니다.");
+  const gj=await r.json();
+  const feat=(gj.type==='FeatureCollection') ? gj.features?.[0] : gj;
+  if(!feat?.geometry) return alert('경로가 없습니다.');
+  let raw=[];
+  if(feat.geometry.type==='LineString') raw=feat.geometry.coordinates;
+  else if(feat.geometry.type==='MultiLineString') raw=feat.geometry.coordinates.flat();
+  else return alert('경로 형식이 올바르지 않습니다.');
+
+  function toLatLon([a,b]){
+    const inKR=(lat,lon)=> (lat>=33&&lat<=39)&&(lon>=124&&lon<=132);
+    if(inKR(b,a)) return [b,a];
+    if(inKR(a,b)) return [a,b];
+    if(Math.abs(a)<=90&&Math.abs(b)<=180) return [a,b];
+    return [b,a];
+  }
+  routeCoords = raw.map(toLatLon);
+  if(routeCoords.length<2) return alert('경로 좌표가 부족합니다.');
+
+  drawRoute(routeCoords);
+  placeObstaclesAlongRoute();
+  avoidMarkers.forEach((_,i)=>showHazard(i,false));
+
+  animIndex = 0;
+  updateTotalInfo();
+  refreshInfo();
+  startMarkerAnimation();
+};
+
+document.getElementById("warningBox").addEventListener("click", function(){
+  this.style.display='none'; switchDroneVideo(null);
+});
+document.addEventListener("keydown", function(e){
+  if(e.key==="Enter"){ e.preventDefault(); document.getElementById("routeBtn").click(); }
+});
+
+// ==============================
+//  사이드바 토글
+// ==============================
+const sidebar = document.getElementById("sidebar");
+const toggleBtn = document.getElementById("sidebarToggle");
+toggleBtn.addEventListener("click", () => {
+  sidebar.classList.toggle("sidebar-closed");
+  toggleBtn.textContent = sidebar.classList.contains("sidebar-closed") ? "▶" : "◀";
+  setTimeout(()=>map.invalidateSize(), 200);
+});
+</script>
+{% endblock %}

@@ -1,0 +1,245 @@
+<!-- Intro.js CSS -->
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/intro.js/minified/introjs.min.css"
+/>
+
+<!-- coach_map.html — map.html 전용: Spotlight + Curved Arrows + Tips (검정 화살표) -->
+<style>
+  .coach-overlay { position: fixed; inset: 0; z-index: 2147483000; pointer-events: none; }
+  .coach-layer   { position: absolute; inset: 0; }
+
+  /* 어둡게 덮는 레이어(마스크로 구멍 뚫기) */
+  .coach-dim     { width:100%; height:100%; display:block; z-index:2147483001; }
+
+  /* 곡선 화살표: dim 위, 말풍선 아래 */
+  .coach-arrows  { position:absolute; inset:0; z-index:2147483002; pointer-events:none; }
+
+  /* 말풍선/푸터: 최상단(클릭 가능) */
+  .coach-tip {
+    position:absolute; max-width:340px;
+    background:#1a1a1a; color:#fff; border:1px solid #2a2a2a;
+    border-radius:10px; padding:12px 14px; box-shadow:0 12px 28px rgba(0,0,0,.35);
+    font-size:13px; line-height:1.5; z-index:2147483004; pointer-events:auto;
+  }
+  .coach-tip strong { font-size:13.5px; }
+  .coach-footer{
+    position:absolute; left:0; right:0; top:0;
+    background:rgba(17,17,17,.95); color:#eee; border-top:1px solid rgba(255,255,255,.12);
+    padding:10px 16px; display:flex; align-items:center; gap:10px;
+    z-index:2147483004; pointer-events:auto; font-size:13px;
+  }
+  .coach-footer button{
+    margin-left:auto; background:transparent; border:1px solid rgba(255,255,255,.2);
+    color:#fff; padding:6px 10px; border-radius:8px; cursor:pointer;
+  }
+</style>
+
+<div id="coachOverlay" class="coach-overlay" style="display:block">
+  <!-- 어두운 배경 + 스포트라이트 마스크 -->
+  <svg id="coachDim" class="coach-layer coach-dim" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+    <defs>
+      <mask id="coachMask">
+        <rect x="0" y="0" width="100%" height="100%" fill="white"/>
+        <!-- JS가 검정 rect(구멍)을 추가 -->
+      </mask>
+    </defs>
+    <rect x="0" y="0" width="100%" height="100%" fill="rgba(0,0,0,.40)" mask="url(#coachMask)"/>
+  </svg>
+
+  <!-- 곡선 화살표(검정 화살촉) -->
+  <svg id="coachArrows" class="coach-layer coach-arrows" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="coachArrowHead" markerWidth="12" markerHeight="12" refX="7" refY="6" orient="auto">
+        <path d="M0,0 L0,12 L11,6 z" fill="black"/>
+      </marker>
+    </defs>
+  </svg>
+
+  <!-- 말풍선들: data-target에 연결 대상(셀렉터), 위치는 top/left/right/bottom으로 미세 조정 -->
+  <div class="coach-tip" data-target=".naver-input-box,#start,#end" style="top:110px; left:460px;">
+    <strong>출발지 / 도착지</strong><br>
+    주소 지정 불가<br>
+    <b>길찾기</b>를 누르면 최적 경로가 표시
+  </div>
+
+  <div class="coach-tip" data-target="#routeBtn" style="top:210px; left:460px; width:260px;">
+    <strong>길찾기</strong><br>
+    지정된 방해요소 4개를 실시간으로 <br>
+    회피하며 최적 경로를 지도에 표시<br><br>
+    클릭시 방해요소의 드론 영상 확인 가능
+  </div>
+
+  <div class="coach-tip" data-target="#summaryBox,#summaryText" style="top:350px; left:460px;">
+    <strong>경로 요약</strong><br>
+    출발지/도착지 MGRS 좌표 · 총 거리 · 예상 소요 시간 · 남은 거리 표기<br>
+  </div>
+
+  <div class="coach-tip" data-target=".map-style-switcher" style="top:86px; right:300px;">
+    <strong>지도 스타일</strong><br>
+    일반/위성/지형 중 지도 스타일 변경 가능 
+  </div>
+
+  <div class="coach-tip" data-target="#warningBox" style="bottom:140px; left:48px;">
+    <strong>위험 경고</strong><br>
+    경로 인근 위험 징후가 감지되면 여기로 안내
+  </div>
+
+  <div class="coach-footer">
+    <button id="coachCloseBtn" type="button">닫기 ✕</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const overlay   = document.getElementById('coachOverlay');
+  const dimSvg    = document.getElementById('coachDim');
+  const mask      = dimSvg?.querySelector('#coachMask');
+  const arrowsSvg = document.getElementById('coachArrows');
+
+  if (!overlay || !dimSvg || !mask || !arrowsSvg) return;
+
+  /* 안전: SVG 크기 명시 */
+  arrowsSvg.setAttribute('width', '100%');
+  arrowsSvg.setAttribute('height', '100%');
+
+  /* map.html 실제 요소 기준 — 존재하지 않아도 스킵됨 */
+  const HOLES = [
+    { sel: '.naver-input-box',   pad: 8,  r: 10 },
+    { sel: '#start',             pad: 8,  r: 8  },
+    { sel: '#end',               pad: 8,  r: 8  },
+    { sel: '#routeBtn',          pad: 10, r: 10 },
+    { sel: '#summaryBox',        pad: 10, r: 10 },
+    { sel: '#summaryText',       pad: 10, r: 10 },
+    { sel: '.map-style-switcher',pad: 8,  r: 10 },
+    { sel: '#warningBox',        pad: 12, r: 10 }
+  ];
+
+  function rebuild(){
+    // 1) 기존 구멍 제거, 화살표 path 초기화(<defs> 보존)
+    [...mask.querySelectorAll('rect[data-hole]')].forEach(n => n.remove());
+    const defs = arrowsSvg.querySelector('defs');
+    arrowsSvg.innerHTML = '';
+    if (defs) arrowsSvg.appendChild(defs);
+
+    // 2) 스포트라이트 구멍 생성 + rectMap 구축
+    const rectMap = {};
+    HOLES.forEach(h => {
+      const els = document.querySelectorAll(h.sel);
+      if (!els.length) return;
+      els.forEach((el, i) => {
+        const b = el.getBoundingClientRect();
+        if (b.width === 0 && b.height === 0) return;
+        const pad = h.pad || 0;
+        const x = b.left - pad, y = b.top - pad;
+        const w = b.width + pad*2, hgt = b.height + pad*2;
+
+        const r = document.createElementNS('http://www.w3.org/2000/svg','rect');
+        r.setAttribute('x', x); r.setAttribute('y', y);
+        r.setAttribute('width', w); r.setAttribute('height', hgt);
+        r.setAttribute('rx', h.r || 6); r.setAttribute('ry', h.r || 6);
+        r.setAttribute('fill', 'black');
+        r.setAttribute('data-hole', '1');
+        mask.appendChild(r);
+
+        const key = i===0 ? h.sel : `${h.sel}[${i}]`;
+        rectMap[key] = { x, y, w, h: hgt };
+      });
+    });
+
+    // 3) 팁 → 타깃까지 화살표 그리기 (rectMap 실패 시 DOM 직접 측정 폴백)
+    const makePath = (d, stroke, width, opacity) => {
+      const p = document.createElementNS('http://www.w3.org/2000/svg','path');
+      p.setAttribute('d', d);
+      p.setAttribute('fill', 'none');
+      p.setAttribute('stroke', stroke);
+      p.setAttribute('stroke-width', width);
+      p.setAttribute('stroke-linecap', 'round');
+      p.setAttribute('stroke-linejoin', 'round');
+      if (opacity != null) p.setAttribute('opacity', opacity);
+      p.setAttribute('marker-end','url(#coachArrowHead)');
+      return p;
+    };
+
+    const nearestEdgePoint = (from, rect) => {
+      const cx = rect.x + rect.w/2, cy = rect.y + rect.h/2;
+      const dx = from.x - cx, dy = from.y - cy;
+      const ax = Math.abs(dx), ay = Math.abs(dy);
+      let ex, ey;
+      if (ax/rect.w > ay/rect.h) {  // 좌우 변
+        ex = (dx > 0) ? rect.x + rect.w : rect.x;
+        ey = cy + dy * (rect.w/2) / Math.max(ax, 1);
+      } else {                      // 상하 변
+        ex = cx + dx * (rect.h/2) / Math.max(ay, 1);
+        ey = (dy > 0) ? rect.y + rect.h : rect.y;
+      }
+      return { x:ex, y:ey };
+    };
+
+    const getTargetRect = (sels) => {
+      for (const sel of sels) {
+        // 1) HOLES로 만든 rectMap 우선
+        const r = rectMap[sel] ?? rectMap[`${sel}[0]`];
+        if (r) return r;
+        // 2) 폴백: DOM에서 직접 측정(구멍이 없어도 화살표는 그린다)
+        const el = document.querySelector(sel);
+        if (el) {
+          const b = el.getBoundingClientRect();
+          if (b.width > 0 && b.height > 0) return { x:b.left, y:b.top, w:b.width, h:b.height };
+        }
+      }
+      return null;
+    };
+
+    const drawArrow = (from, rect) => {
+      const to   = nearestEdgePoint(from, rect);
+      const cpx  = (from.x + to.x)/2 + (from.x < to.x ? -40 : 40);
+      const cpy  = (from.y + to.y)/2 + (from.y < to.y ? -20 : 20);
+      const d    = `M ${from.x},${from.y} Q ${cpx},${cpy} ${to.x},${to.y}`;
+
+    const p = document.createElementNS('http://www.w3.org/2000/svg','path');
+    p.setAttribute('d', d);
+    p.setAttribute('fill', 'none');
+    p.setAttribute('stroke', 'black');
+    p.setAttribute('stroke-width', '2.5');
+    p.setAttribute('marker-end', 'url(#coachArrowHead)');
+    arrowsSvg.appendChild(p);
+    };
+
+    document.querySelectorAll('.coach-tip').forEach(tip => {
+      const tb   = tip.getBoundingClientRect();
+      const from = { x: tb.left + tb.width/2, y: tb.top + tb.height/2 };
+
+      const sels = (tip.dataset.target || '')
+        .split(',').map(s => s.trim()).filter(Boolean);
+      if (!sels.length) return;
+
+      const rect = getTargetRect(sels);
+      if (!rect) return;
+
+      drawArrow(from, rect);
+    });
+  }
+
+  // 디바운스
+  let t;
+  const safeRebuild = () => { clearTimeout(t); t = setTimeout(rebuild, 60); };
+
+  // 초기 렌더(레이아웃 안정 후 2회 보정)
+  requestAnimationFrame(() => { rebuild(); setTimeout(rebuild, 150); });
+
+  // 반응형 갱신
+  window.addEventListener('resize', safeRebuild, { passive:true });
+  window.addEventListener('scroll', safeRebuild, { passive:true });
+
+  // 닫기
+  document.getElementById('coachCloseBtn')?.addEventListener('click', () => {
+    overlay.style.display = 'none';
+  });
+
+  // 혹시 <head>에 인클루드되면 body로 이동
+  if (overlay.parentNode?.tagName === 'HEAD') {
+    document.addEventListener('DOMContentLoaded', () => document.body.appendChild(overlay));
+  }
+})();
+</script>

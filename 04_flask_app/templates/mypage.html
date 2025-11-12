@@ -1,0 +1,568 @@
+{% extends "base.html" %}
+
+{% block title %}마이페이지{% endblock %}
+
+{% block head_extra %}
+  {{ super() }}
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <!-- Chart.js 라이브러리 추가 -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    .mypage-container {
+      max-width: 1200px; /* 최대 너비를 살짝 넓혀 쾌적하게 */
+      margin: 2rem auto;
+      padding: 2rem;
+      font-family: "Pretendard", "Noto Sans KR", sans-serif; /* Pretendard 폰트 우선 적용 (없으면 Noto Sans KR) */
+      background-color: #f8f9fa; /* 페이지 전체에 연한 회색 배경 */
+    }
+    /* --- 전체 카드 레이아웃 --- */
+    .mypage-card {
+        background-color: #ffffff;
+        border-radius: 12px;
+        padding: 2rem;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        border: 1px solid #e9ecef;
+    }
+    .mypage-card h1 {
+        font-size: 1.75rem;
+        font-weight: 700;
+        margin-bottom: 1.5rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .mypage-card h2 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: #343a40;
+    }
+    
+    .tabs {
+      display: flex;
+      border-bottom: 2px solid #dee2e6;
+      margin-bottom: 2rem; /* 탭과 콘텐츠 사이 간격 추가 */
+    }
+    .tab-link {
+      padding: 0.8rem 1.2rem;
+      cursor: pointer;
+      border: none;
+      background: none;
+      font-size: 1rem;
+      font-weight: 500;
+      color: #868e96;
+      border-bottom: 3px solid transparent;
+      transition: all 0.2s ease-in-out;
+    }
+    .tab-link:hover {
+        color: #007bff;
+    }
+    .tab-link.active {
+      border-bottom: 3px solid #007bff;
+      font-weight: 700;
+      color: #343a40;
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    
+    /* --- 기록 테이블(Table) 스타일 --- */
+    .history-layout { display: flex; gap: 1.5rem; }
+    .history-table-wrapper { flex: 2; max-height: 80vh; overflow-y: auto; }
+    #historyMap { flex: 3; height: 80vh; border-radius: 8px; border: 1px solid #dee2e6; }
+    
+    /* 지도(Map) 너비 비율을 늘립니다. */
+    #historyMap { 
+        flex: 3; /* 2 -> 3으로 변경 (너비 늘림) */
+        height: 80vh; /* 70vh -> 80vh로 변경 (높이 늘림) */
+        border-radius: 8px; 
+        border: 1px solid #ccc; 
+    }
+    .history-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    .history-table th, .history-table td {
+      padding: 0.9rem 0.7rem;
+      border-bottom: 1px solid #e9ecef; /* 하단 테두리만 사용 */
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    .history-table th {
+      background-color: #f8f9fa;
+      font-weight: 600;
+      color: #495057;
+    }
+    .history-table tbody tr:hover {
+      background-color: #f1f7ff; /* 호버 시 연한 파란색 */
+    }
+    
+    /* 알고리즘별 경로 표시 버튼 스타일 */
+    .path-btn {
+        background: none; border: none; padding: 0;
+        cursor: pointer; text-decoration: underline; font: inherit;
+        transition: color 0.2s ease;
+    }
+    .path-btn:hover { text-decoration: none; }
+    .path-btn.dlite { color: #dc3545; } /* red */
+    .path-btn.cch_a { color: #007bff; } /* blue */
+    .path-btn.rtaa { color: #28a745; } /* green */
+    .path-btn:disabled { color: #adb5bd; text-decoration: none; cursor: not-allowed; }
+    
+    /* --- 내 정보 폼(Form) 스타일 --- */
+    .info-form .form-group { margin-bottom: 1.5rem; }
+    .info-form label { display: block; font-weight: 600; margin-bottom: 0.5rem; color: #495057; }
+    .info-form input {
+      width: 100%;
+      max-width: 400px;
+      padding: 0.8rem;
+      border: 1px solid #ced4da;
+      border-radius: 8px;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .info-form input:focus {
+        outline: none;
+        border-color: #80bdff;
+        box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+    }
+
+    /* --- 버튼 공통 스타일 --- */
+    .btn-submit {
+      padding: 0.75rem 1.5rem;
+      font-size: 1rem;
+      font-weight: 600;
+      color: white;
+      background-color: #007bff;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background-color 0.2s ease, transform 0.1s ease;
+    }
+    .btn-submit:hover {
+        background-color: #0056b3;
+        transform: translateY(-1px);
+    }
+    #deleteHistoryBtn {
+        background-color: #dc3545; /* 삭제 버튼은 빨간색으로 */
+    }
+    #deleteHistoryBtn:hover {
+        background-color: #c82333;
+    }
+    /* --- 통계 대시보드 스타일 --- */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+      margin-top: 1.5rem;
+    }
+    .stat-card, .chart-container {
+      background-color: #f8f9fa;
+      padding: 1.5rem;
+      border-radius: 8px;
+      border: 1px solid #e9ecef;
+    }
+    .stat-card h3, .chart-container h3 {
+      margin-top: 0;
+      margin-bottom: 1rem;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #495057;
+    }
+    .stat-card p {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #007bff;
+      margin: 0;
+    }
+    .chart-container canvas {
+        max-width: 100%;
+    }
+
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="mypage-container">
+  <div class="mypage-card"> 
+    <h1>마이페이지</h1>
+  
+    <div class="tabs">
+      <button class="tab-link active" onclick="openTab(event, 'history')">📝 서비스 사용 기록</button>
+      <button class="tab-link" onclick="openTab(event, 'stats')">📊 통계</button>
+      <button class="tab-link" onclick="openTab(event, 'my-info')">🙋🏻‍♂️ 내 정보</button>
+    </div>
+    <!-- <div style="margin-bottom: 1rem; text-align: right;">
+      <button id="deleteHistoryBtn" class="btn-submit" style="background-color: #dc3545;">선택 기록 삭제</button>
+    </div> -->
+    <!-- 1. 서비스 사용 기록 탭 -->
+    <div id="history" class="tab-content active">
+  
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h2>경로 탐색 기록</h2>
+        <button id="deleteHistoryBtn" class="btn-submit" style="background-color: #dc3545;">선택 기록 삭제</button>
+      </div>
+
+      <form action="{{ url_for('mypage') }}" method="get" class="search-form">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 1rem;">
+          <input type="text" name="q" placeholder="출발지 또는 도착지 검색" value="{{ search_values.q or '' }}" 
+                style="flex-grow: 1; padding: 8px; border: 1px solid #ccc; border-radius: 5px;">
+          
+          <label for="start-date" style="font-size: 14px;">기간:</label>
+          <input type="date" id="start-date" name="start_date" value="{{ search_values.start_date or '' }}"
+                style="padding: 8px; border: 1px solid #ccc; border-radius: 5px;">
+          <span>~</span>
+          <input type="date" id="end-date" name="end_date" value="{{ search_values.end_date or '' }}"
+                style="padding: 8px; border: 1px solid #ccc; border-radius: 5px;">
+          
+          <button type="submit" class="btn-submit" style="padding: 8px 16px;">검색</button>
+          <a href="{{ url_for('mypage') }}" style="padding: 8px 16px; color: #6c757d; text-decoration: none;">초기화</a>
+        </div>
+      </form>
+      <div class="history-layout">
+        <div class="history-table-wrapper">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th><input type="checkbox" id="selectAllCheckbox"></th>
+                <th>검색 기록</th>
+                <th>검색일시</th>
+                <th>출발지</th>
+                <th>도착지</th>
+                <th>D* Lite</th>
+                <th>CCH + A*</th>
+                <th>RTAA*</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for record in history %}
+              <tr>
+                <td>
+                    <input type="checkbox" class="history-checkbox" data-request-id="{{ record.request_id }}">
+                </td>
+                <td>{{ user_info.user_id }}-{{ loop.revindex }}</td>
+                <td>{{ record.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>{{ record.start_address }}</td>
+                <td>{{ record.goal_address }}</td>
+                
+                <td>
+                  <button class="path-btn dlite" 
+                          data-path='{{ record.paths_by_algo.dlite | default(none) | tojson | e }}'
+                          {% if not record.paths_by_algo.dlite %}disabled{% endif %}>
+                    경로 보기
+                  </button>
+                </td>
+                <td>
+                  <button class="path-btn cch_a" 
+                          data-path='{{ record.paths_by_algo.cch_a | default(none) | tojson | e }}'
+                          {% if not record.paths_by_algo.cch_a %}disabled{% endif %}>
+                    경로 보기
+                  </button>
+                </td>
+                <td>
+                  <button class="path-btn rtaa"
+                          data-path='{{ record.paths_by_algo.rtaa | default(none) | tojson | e }}'
+                          {% if not record.paths_by_algo.rtaa %}disabled{% endif %}>
+                    경로 보기
+                  </button>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div id="historyMap"></div>
+      </div>
+    </div>
+    <!-- 2. 통계 탭 -->
+    <div id="stats" class="tab-content">
+      <h2>활동 통계</h2>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <h3>총 이동 거리</h3>
+          <p id="totalDistanceStat">- km</p>
+        </div>
+        <div class="stat-card">
+          <h3>총 탐색 횟수</h3>
+          <p id="totalSearchesStat">- 회</p>
+        </div>
+      </div>
+      <div class="stats-grid">
+        <div class="chart-container" style="height:400px;">
+          <h3>알고리즘별 총 이동거리 (km)</h3>
+          <canvas id="algoDistanceChart"></canvas>
+        </div>
+        <div class="chart-container" style="height:400px;">
+          <h3>월별 탐색 활동 (최근 6개월)</h3>
+          <canvas id="monthlyActivityChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. 내 정보 탭 -->
+    <div id="my-info" class="tab-content">
+      <h2>계정 정보 수정</h2>
+      <form id="infoForm" class="info-form">
+        <div class="form-group">
+          <label for="userId">아이디</label>
+          <input type="text" id="userId" name="user_id" value="{{ user_info.user_id }}">
+        </div>
+        <div class="form-group">
+          <label for="address">주소</label>
+          <input type="text" id="address" name="address" value="{{ user_info.address }}">
+        </div>
+
+        <div class="form-group">
+          <label for="email">이메일</label>
+          <input type="email" id="email" name="email" value="{{ user_info.email }}">
+        </div>
+        <div class="form-group">
+          <label for="phone">전화번호</label>
+          <input type="tel" id="phone" name="phone" value="{{ user_info.phone }}">
+        </div>
+        <button type="submit" class="btn-submit">정보 저장</button>
+      </form>
+      <div style="margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid #dee2e6;">
+        <h3 style="font-size: 1.1rem; color: #dc3545;">회원 탈퇴</h3>
+        <p style="font-size: 0.9rem; color: #6c757d; margin-bottom: 1rem;">
+          계정을 탈퇴하면 모든 경로 기록과 즐겨찾기 정보가 영구적으로 삭제되며, 복구할 수 없습니다.
+        </p>
+        <button id="deleteAccountBtn" class="btn-submit" style="background-color: #dc3545;">
+          회원 탈퇴 진행
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let algoChart = null;
+  let monthlyChart = null;
+  
+  // 탭 기능
+  function openTab(evt, tabName) {
+    document.querySelectorAll('.tab-content').forEach(tab => tab.style.display = 'none');
+    document.querySelectorAll('.tab-link').forEach(link => link.classList.remove('active'));
+    document.getElementById(tabName).style.display = 'block';
+    evt.currentTarget.classList.add('active');
+
+    // 통계 탭을 클릭했을 때만 차트 로드
+    if (tabName === 'stats') {
+      loadAndRenderStats();
+    }
+  }
+  // 통계 데이터 로드 및 차트 렌더링 함수
+  async function loadAndRenderStats() {
+    try {
+      const response = await fetch('/get_user_stats');
+      const data = await response.json();
+
+      if (!data.success) {
+        alert(data.message);
+        return;
+      }
+
+      const stats = data.stats;
+
+      // 1. 통계 카드 업데이트
+      document.getElementById('totalDistanceStat').textContent = `${stats.total_distance_km} km`;
+      document.getElementById('totalSearchesStat').textContent = `${stats.total_searches} 회`;
+
+      // 2. 알고리즘별 이동거리 (파이 차트)
+      const algoCtx = document.getElementById('algoDistanceChart').getContext('2d');
+      const algoData = {
+        labels: Object.keys(stats.algorithm_distance),
+        datasets: [{
+          label: '이동 거리 (km)',
+          data: Object.values(stats.algorithm_distance),
+          backgroundColor: ['#dc3545', '#007bff', '#28a745', '#ffc107', '#17a2b8'],
+        }]
+      };
+      // ▼▼▼ 중요: 기존 차트가 있으면 파괴하고 새로 생성 (y축 길어짐 문제 해결) ▼▼▼
+      if (algoChart) algoChart.destroy(); // 기존 차트 파괴
+      algoChart = new Chart(algoCtx, {
+        type: 'pie',
+        data: algoData,
+        options: { responsive: true, maintainAspectRatio: false }
+      });
+
+      // 3. 월별 탐색 활동 (막대 차트)
+      const monthlyCtx = document.getElementById('monthlyActivityChart').getContext('2d');
+      const monthlyLabels = [];
+      const monthlyDataPoints = [];
+      const today = new Date();
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        monthlyLabels.push(monthKey);
+        monthlyDataPoints.push(stats.monthly_activity[monthKey] || 0);
+      }
+      const monthlyData = {
+        labels: monthlyLabels,
+        datasets: [{
+          label: '탐색 횟수',
+          data: monthlyDataPoints,
+          backgroundColor: 'rgba(0, 123, 255, 0.6)',
+          borderColor: 'rgba(0, 123, 255, 1)',
+          borderWidth: 1
+        }]
+      };
+      if (monthlyChart) monthlyChart.destroy(); // 기존 차트 파괴
+      monthlyChart = new Chart(monthlyCtx, {
+        type: 'bar',
+        data: monthlyData,
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+        }
+      });
+
+    } catch (error) {
+      console.error("통계 데이터 로딩 실패:", error);
+      alert("통계 데이터를 불러오는 중 오류가 발생했습니다.");
+    }
+  }
+
+  // 내 정보 수정 폼 이벤트 리스너
+  const infoForm = document.getElementById('infoForm');
+  if(infoForm){
+    infoForm.addEventListener('submit', function(e) {
+      e.preventDefault();
+      const formData = new FormData(this);
+      
+      fetch('/update_user_info', { method: 'POST', body: formData })
+      .then(response => response.json())
+      .then(data => {
+        alert(data.message);
+        if (data.success) {
+          location.reload();
+        }
+      })
+      .catch(error => console.error('Error:', error));
+    });
+  }
+
+  // 서비스 사용 기록 지도 기능 (DOMContentLoaded 사용)
+  document.addEventListener('DOMContentLoaded', function() {
+    const mapElement = document.getElementById('historyMap');
+    if (!mapElement) return; // 지도 요소가 없으면 실행 중단
+
+    const map = L.map('historyMap').setView([37.5665, 126.9780], 11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    let currentPathLayer = null;
+
+    document.querySelectorAll('.path-btn').forEach(button => {
+      button.addEventListener('click', function() {
+        if (currentPathLayer) map.removeLayer(currentPathLayer);
+
+        const pathJson = this.dataset.path;
+        
+        // 데이터가 비어있거나 'None' 문자열이면 아무것도 하지 않음
+        if (!pathJson || pathJson === 'None' || pathJson.trim() === '') {
+          console.log("경로 데이터가 없습니다.");
+          return;
+        }
+
+        try {
+          const pathCoords = JSON.parse(pathJson); 
+          if (pathCoords && pathCoords.length > 0) {
+            const color = this.classList.contains('dlite') ? 'red' :
+                          this.classList.contains('cch_a') ? 'blue' : 'green';
+            
+            currentPathLayer = L.polyline(pathCoords, { color: color }).addTo(map);
+            map.fitBounds(currentPathLayer.getBounds());
+          }
+        } catch (err) {
+          console.error("경로 데이터 파싱 실패:", err, "원본 데이터:", pathJson);
+          alert("경로 데이터를 지도에 표시할 수 없습니다. 개발자 콘솔(F12)을 확인해주세요.");
+        }
+      });
+    });
+    const deleteBtn = document.getElementById('deleteHistoryBtn');
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    const rowCheckboxes = document.querySelectorAll('.history-checkbox');
+    // --- 회원 탈퇴 버튼 이벤트 리스너 ---
+    const deleteAccountBtn = document.getElementById('deleteAccountBtn');
+    if (deleteAccountBtn) {
+        deleteAccountBtn.addEventListener('click', function() {
+            
+            // 1차 확인
+            if (!confirm("정말로 회원 탈퇴를 진행하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) {
+                return;
+            }
+
+            // 2차 최종 확인
+            if (!confirm("모든 데이터가 영구적으로 삭제됩니다. 마지막으로 확인합니다. 정말 탈퇴하시겠습니까?")) {
+                return;
+            }
+
+            // 서버에 삭제 요청
+            fetch('/delete_account', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                if (data.success) {
+                    // 성공 시 홈페이지로 리디렉션
+                    window.location.href = "/";
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('회원 탈퇴 처리 중 오류가 발생했습니다.');
+            });
+        });
+    }
+    // '전체 선택' 체크박스 클릭 이벤트
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', function() {
+            rowCheckboxes.forEach(checkbox => {
+                checkbox.checked = this.checked;
+            });
+        });
+    }
+
+    // '선택 기록 삭제' 버튼 클릭 이벤트
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', function() {
+            const selectedIds = [];
+            rowCheckboxes.forEach(checkbox => {
+                if (checkbox.checked) {
+                    selectedIds.push(checkbox.dataset.requestId);
+                }
+            });
+
+            if (selectedIds.length === 0) {
+                alert('삭제할 기록을 선택해주세요.');
+                return;
+            }
+
+            if (confirm(`선택한 ${selectedIds.length}개의 기록을 정말 삭제하시겠습니까?`)) {
+                // 서버에 삭제 요청 보내기
+                fetch('/delete_history', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ request_ids: selectedIds })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    alert(data.message);
+                    if (data.success) {
+                        location.reload(); // 성공 시 페이지 새로고침
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('삭제 중 오류가 발생했습니다.');
+                });
+            }
+        });
+    }
+  });
+</script>
+{% endblock %}
