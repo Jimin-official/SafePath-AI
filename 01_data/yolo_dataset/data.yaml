@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 8
+names: ['north tank', 'korea tank', 'north army', 'korea army', 'fire', 'road collapse', 'bridge collapse', 'explosion']
+
+roboflow:
+  workspace: redroad-bdwvv
+  project: explosion-dhzib
+  version: 2
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/redroad-bdwvv/explosion-dhzib/dataset/2
